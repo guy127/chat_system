@@ -40,7 +40,7 @@ func Migrate(url string) error {
 	if err != nil {
 		return fmt.Errorf("init migrate: %w", err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate up: %w", err)
 	}
@@ -49,8 +49,8 @@ func Migrate(url string) error {
 
 func migrateURL(url string) string {
 	for _, prefix := range []string{"postgresql://", "postgres://"} {
-		if strings.HasPrefix(url, prefix) {
-			return "pgx5://" + strings.TrimPrefix(url, prefix)
+		if rest, ok := strings.CutPrefix(url, prefix); ok {
+			return "pgx5://" + rest
 		}
 	}
 	return url

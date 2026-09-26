@@ -1,0 +1,65 @@
+stages:
+  - lint
+  - test
+  - build
+
+default:
+  interruptible: true
+
+go:lint:
+  stage: lint
+  image: golangci/golangci-lint:latest
+  script:
+    - cd server
+    - golangci-lint run ./...
+
+go:test:
+  stage: test
+  image: golang:1.26
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: test
+    POSTGRES_DB: qrchat_test
+    TEST_DATABASE_URL: postgres://postgres:test@postgres:5432/qrchat_test?sslmode=disable
+  script:
+    - cd server
+    - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+    - go vet ./...
+    - go test -count=1 ./...
+
+go:build:
+  stage: build
+  image: golang:1.26
+  script:
+    - cd server
+    - CGO_ENABLED=0 go build -o bin/server ./cmd/server
+
+web:lint:
+  stage: lint
+  image: node:24-alpine
+  cache:
+    key:
+      files: [web/package-lock.json]
+    paths: [web/.npm/]
+  script:
+    - cd web
+    - npm ci --cache .npm --prefer-offline
+    - npm run lint
+    - npm run format:check
+    - npx tsc --noEmit
+
+web:build:
+  stage: build
+  image: node:24-alpine
+  cache:
+    key:
+      files: [web/package-lock.json]
+    paths: [web/.npm/]
+    policy: pull
+  script:
+    - cd web
+    - npm ci --cache .npm --prefer-offline
+    - npm run build

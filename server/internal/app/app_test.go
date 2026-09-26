@@ -80,7 +80,7 @@ func (a *testAPI) do(method, path, jwt string, body, out any) int {
 	} else {
 		rd = bytes.NewReader(nil)
 	}
-	req, _ := http.NewRequest(method, a.srv.URL+path, rd)
+	req, _ := http.NewRequestWithContext(context.Background(), method, a.srv.URL+path, rd)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -91,7 +91,7 @@ func (a *testAPI) do(method, path, jwt string, body, out any) int {
 	if err != nil {
 		a.t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if out != nil {
 		_ = json.NewDecoder(res.Body).Decode(out)
 	}
@@ -160,7 +160,10 @@ func (a *testAPI) dial(s session) *wsClient {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	url := "ws" + strings.TrimPrefix(a.srv.URL, "http") + "/ws?room=" + s.RoomID
-	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{Subprotocols: []string{"chat", s.JWT}})
+	conn, res, err := websocket.Dial(ctx, url, &websocket.DialOptions{Subprotocols: []string{"chat", s.JWT}})
+	if res != nil && res.Body != nil {
+		_ = res.Body.Close()
+	}
 	if err != nil {
 		a.t.Fatalf("dial: %v", err)
 	}
