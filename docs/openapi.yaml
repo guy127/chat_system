@@ -708,6 +708,52 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /service/v1/rooms/{ref}/images/{imageId}:
+    parameters:
+      - $ref: "#/components/parameters/ServiceRef"
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [service]
+      operationId: getServiceImage
+      summary: Download an image sent in the room
+      description: |
+        Only images already carried by a message in this room; uploads not yet sent, and images of
+        other rooms, are `404`. `X-Sender-External-Id` tells the caller who sent it.
+      security:
+        - serviceKey: []
+      responses:
+        "200":
+          description: The image bytes.
+          headers:
+            X-Sender-External-Id:
+              description: "`external_user_id` of the sender; empty if the sender is not an external user."
+              schema:
+                type: string
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+            image/png:
+              schema:
+                type: string
+                contentMediaType: image/png
+            image/gif:
+              schema:
+                type: string
+                contentMediaType: image/gif
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/ServiceUnauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   securitySchemes:
     roomJWT:

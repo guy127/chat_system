@@ -1,7 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net/http"
 	"testing"
 	"time"
 
@@ -160,5 +163,56 @@ func TestServiceRemovedMember(t *testing.T) {
 	if code := a.do("POST", "/service/v1/rooms/"+ref+"/sessions", testServiceKey,
 		map[string]string{"external_user_id": "user:9", "display_name": "A"}, &e); code != 409 || e.Error.Code != "member_removed" {
 		t.Fatalf("removed member = %d %q", code, e.Error.Code)
+	}
+}
+
+func (a *testAPI) serviceImage(ref, imageID string) (int, http.Header, []byte) {
+	a.t.Helper()
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		a.srv.URL+"/service/v1/rooms/"+ref+"/images/"+imageID, nil)
+	req.Header.Set("Authorization", "Bearer "+testServiceKey)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, res.Header, b
+}
+
+func TestServiceSentImage(t *testing.T) {
+	a := newAPI(t)
+	ref, otherRef := testRef(), testRef()
+	a.ensureServiceRoom(ref)
+	a.ensureServiceRoom(otherRef)
+	emp, _ := a.serviceSession(ref, "user:1", "A", "ผู้ยื่น")
+	staff, _ := a.serviceSession(ref, "user:2", "B", "เจ้าหน้าที่")
+
+	_, img := a.upload(emp, "receipt.png", pngBytes(t, 40, 30))
+	sentID := img["id"].(string)
+	ec := a.dial(emp)
+	ec.send(map[string]any{"type": "send", "client_msg_id": uuid.NewString(), "body": "", "image_id": sentID})
+	ec.next("ack")
+	_, unsent := a.upload(staff, "draft.png", pngBytes(t, 2, 2))
+
+	code, hdr, data := a.serviceImage(ref, sentID)
+	if code != 200 || hdr.Get("Content-Type") != "image/png" || hdr.Get("X-Sender-External-Id") != "user:1" {
+		t.Fatalf("sent image = %d %v", code, hdr)
+	}
+	_, _, viaMember := a.getImage(emp, emp.RoomID, sentID)
+	if !bytes.Equal(data, viaMember) {
+		t.Fatal("service bytes differ from what members see")
+	}
+
+	for name, path := range map[string][2]string{
+		"unsent upload": {ref, unsent["id"].(string)},
+		"other room":    {otherRef, sentID},
+		"unknown image": {ref, uuid.NewString()},
+		"not a uuid":    {ref, "nope"},
+		"unknown room":  {testRef(), sentID},
+	} {
+		if code, _, _ := a.serviceImage(path[0], path[1]); code != 404 {
+			t.Errorf("%s = %d, want 404", name, code)
+		}
 	}
 }

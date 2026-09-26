@@ -1,10 +1,13 @@
 package service
 
 import (
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"smalltalk/internal/apperr"
 	"smalltalk/internal/auth"
@@ -25,6 +28,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	g.PUT("", h.ensureRoom)
 	g.POST("/sessions", h.session)
 	g.POST("/close", h.close)
+	g.GET("/images/:imageId", h.image)
 }
 
 // RequireKey checks the shared service key in constant time. An empty key
@@ -85,4 +89,27 @@ func (h *Handler) close(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) image(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("imageId"))
+	if err != nil {
+		httpx.Error(c, apperr.NotFound)
+		return
+	}
+	img, rc, sender, err := h.svc.SentImage(c.Request.Context(), c.Param("ref"), id)
+	if err != nil {
+		httpx.Error(c, err)
+		return
+	}
+	defer func() { _ = rc.Close() }()
+
+	hdr := c.Writer.Header()
+	hdr.Set("Content-Type", img.ContentType)
+	hdr.Set("Content-Length", strconv.Itoa(img.SizeBytes))
+	hdr.Set("X-Sender-External-Id", sender)
+	hdr.Set("X-Content-Type-Options", "nosniff")
+	hdr.Set("Cache-Control", "no-store")
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, rc)
 }

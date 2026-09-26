@@ -41,11 +41,21 @@ func (r *Repository) Insert(ctx context.Context, img Image) error {
 	return nil
 }
 
+const imageSelect = `SELECT id, room_id, member_id, content_type, size_bytes, width, height, storage_key, created_at
+	FROM images WHERE room_id = $1 AND id = $2`
+
 func (r *Repository) Get(ctx context.Context, roomID, id uuid.UUID) (Image, error) {
+	return r.get(ctx, imageSelect, roomID, id)
+}
+
+// GetSent is Get restricted to images that a message in the room carries.
+func (r *Repository) GetSent(ctx context.Context, roomID, id uuid.UUID) (Image, error) {
+	return r.get(ctx, imageSelect+` AND EXISTS (SELECT 1 FROM messages m WHERE m.image_id = images.id)`, roomID, id)
+}
+
+func (r *Repository) get(ctx context.Context, sql string, roomID, id uuid.UUID) (Image, error) {
 	var img Image
-	err := r.db.QueryRow(ctx,
-		`SELECT id, room_id, member_id, content_type, size_bytes, width, height, storage_key, created_at
-		 FROM images WHERE room_id = $1 AND id = $2`, roomID, id).
+	err := r.db.QueryRow(ctx, sql, roomID, id).
 		Scan(&img.ID, &img.RoomID, &img.MemberID, &img.ContentType, &img.SizeBytes,
 			&img.Width, &img.Height, &img.StorageKey, &img.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {

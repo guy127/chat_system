@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"regexp"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"smalltalk/internal/apperr"
 	"smalltalk/internal/auth"
+	"smalltalk/internal/media"
 	"smalltalk/internal/room"
 )
 
@@ -32,12 +34,13 @@ func ValidRef(ref string) error {
 
 type Service struct {
 	rooms  *room.Service
+	images *media.Service
 	issuer *auth.Issuer
 	ttl    time.Duration
 }
 
-func NewService(rooms *room.Service, issuer *auth.Issuer, ttl time.Duration) *Service {
-	return &Service{rooms: rooms, issuer: issuer, ttl: ttl}
+func NewService(rooms *room.Service, images *media.Service, issuer *auth.Issuer, ttl time.Duration) *Service {
+	return &Service{rooms: rooms, images: images, issuer: issuer, ttl: ttl}
 }
 
 type RoomState struct {
@@ -92,4 +95,30 @@ func (s *Service) Close(ctx context.Context, ref string) error {
 		return nil
 	}
 	return s.rooms.Close(ctx, rm.ID)
+}
+
+// SentImage opens an image sent in the room and reports who sent it, so the
+// caller can apply its own rules (e.g. only the claimant's receipts count).
+func (s *Service) SentImage(ctx context.Context, ref string, imageID uuid.UUID) (media.Image, io.ReadCloser, string, error) {
+	if err := ValidRef(ref); err != nil {
+		return media.Image{}, nil, "", err
+	}
+	rm, err := s.rooms.GetByRef(ctx, ref)
+	if err != nil {
+		return media.Image{}, nil, "", fmt.Errorf("sent image: %w", err)
+	}
+	img, rc, err := s.images.OpenSent(ctx, rm.ID, imageID)
+	if err != nil {
+		return media.Image{}, nil, "", fmt.Errorf("sent image: %w", err)
+	}
+	sender, err := s.rooms.Member(ctx, rm.ID, img.MemberID)
+	if err != nil {
+		_ = rc.Close()
+		return media.Image{}, nil, "", fmt.Errorf("sent image: %w", err)
+	}
+	var senderID string
+	if sender.ExternalUserID != nil {
+		senderID = *sender.ExternalUserID
+	}
+	return img, rc, senderID, nil
 }

@@ -42,7 +42,7 @@ func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broke
 
 	sendLimiter := httpx.NewKeyedLimiter(ctx, 5, 5) // 5 messages/s/member
 	chatSvc := chat.NewService(chat.NewRepository(pool), roomSvc, mediaSvc, broker, sendLimiter)
-	serviceSvc := service.NewService(roomSvc, issuer, cfg.ServiceJWTTTL)
+	serviceSvc := service.NewService(roomSvc, mediaSvc, issuer, cfg.ServiceJWTTTL)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()

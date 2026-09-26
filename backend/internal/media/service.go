@@ -65,6 +65,17 @@ func (s *Service) Get(ctx context.Context, roomID, id uuid.UUID) (Image, error) 
 
 func (s *Service) Open(ctx context.Context, roomID, id uuid.UUID) (Image, io.ReadCloser, error) {
 	img, err := s.repo.Get(ctx, roomID, id)
+	return s.open(ctx, img, err)
+}
+
+// OpenSent is Open for images already sent in a message; uploads still
+// waiting for their message are reported as not found.
+func (s *Service) OpenSent(ctx context.Context, roomID, id uuid.UUID) (Image, io.ReadCloser, error) {
+	img, err := s.repo.GetSent(ctx, roomID, id)
+	return s.open(ctx, img, err)
+}
+
+func (s *Service) open(ctx context.Context, img Image, err error) (Image, io.ReadCloser, error) {
 	if err != nil {
 		return Image{}, nil, fmt.Errorf("open image: %w", err)
 	}
