@@ -11,6 +11,61 @@
 - `frontend/` — Next.js 16 (App Router, TypeScript strict)
 - `deploy/nginx.conf` — รวมเว็บ, `/api` และ `/ws` ไว้ใต้ origin เดียว
 
+## Use case
+
+```mermaid
+flowchart LR
+    Guest["👤 Guest<br/>(คนที่ได้ลิงก์เชิญ)"]
+    Member["👤 Member<br/>(สมาชิกในห้อง)"]
+    Host["👤 Host<br/>(เจ้าของห้อง)"]
+    Job["⚙️ System<br/>(งานเบื้องหลัง)"]
+
+    subgraph smalltalk["ระบบ smalltalk"]
+        direction TB
+        UC1(["สร้างห้อง"])
+        UC2(["ขอ session ใหม่ด้วย owner token"])
+        UC3(["สร้างลิงก์เชิญ / QR"])
+        UC4(["ดูลิงก์เชิญที่ยังใช้ได้"])
+        UC5(["ยกเลิกลิงก์เชิญ"])
+        UC6(["เตะสมาชิก"])
+        UC7(["แบนสมาชิก"])
+        UC8(["ปิดห้อง"])
+
+        UC10(["เข้าห้องด้วยลิงก์เชิญ / QR"])
+
+        UC20(["ดูรายการห้องของฉัน<br/>(ข้อความล่าสุด + unread)"])
+        UC21(["ดูข้อมูลห้อง"])
+        UC22(["ดูประวัติข้อความ"])
+        UC23(["ส่งข้อความ"])
+        UC24(["ส่งรูปภาพ (≤ 10 MB)"])
+        UC25(["อัปโหลดรูป<br/>(ย่อรูป + ลบ EXIF)"])
+        UC26(["ดูรูปภาพ"])
+        UC27(["ดูรายชื่อสมาชิก + สถานะออนไลน์"])
+        UC28(["รับข้อความแบบ realtime"])
+        UC29(["เชื่อมต่อใหม่แล้วดึงข้อความที่พลาด"])
+
+        UC30(["ลบรูปที่ไม่ถูกส่งภายใน 1 ชม."])
+    end
+
+    Guest --> UC10
+    Member --> UC20 & UC21 & UC22 & UC23 & UC24 & UC26 & UC27 & UC28
+    Host --> UC1 & UC2 & UC3 & UC4 & UC5 & UC6 & UC8
+    Job --> UC30
+
+    Guest == "เข้าห้องแล้วเป็น" ==> Member
+    Host == "เป็น (generalization)" ==> Member
+
+    UC1 -. "«include»" .-> UC3
+    UC24 -. "«include»" .-> UC25
+    UC23 -. "«include»" .-> UC28
+    UC7 -. "«extend»" .-> UC6
+    UC29 -. "«extend»" .-> UC28
+```
+
+- **Guest** เข้าห้องด้วยลิงก์เชิญ แล้วกลายเป็น Member
+- **Host** ทำได้ทุกอย่างที่ Member ทำได้ (ตอนสร้างห้องได้ `member_id` ด้วย) และจัดการห้องได้
+- **System** ลบรูปที่อัปโหลดแล้วแต่ไม่ถูกส่งภายใน 1 ชั่วโมง
+
 ## เริ่มใช้งาน (Docker Compose)
 
 ```bash
@@ -67,6 +122,72 @@ npm run lint && npm run format:check && npx tsc --noEmit && npm run build
 ```
 
 CI (`.gitlab-ci.yml`) รัน lint + test (มี Postgres service) + build ทั้งสองฝั่ง
+
+## โครงสร้าง package ของ Backend
+
+ลูกศรชี้จาก package ที่ import ไปยัง package ที่ถูก import (ไม่มี import cycle)
+
+```mermaid
+graph TD
+    main["cmd/server"]
+    app["internal/app"]
+    chat["internal/chat"]
+    invite["internal/invite"]
+    media["internal/media"]
+    room["internal/room"]
+    httpx["platform/httpx"]
+    auth["internal/auth"]
+    apperr["internal/apperr"]
+    config["platform/config"]
+    db["platform/db"]
+
+    main --> app
+    main --> chat
+    main --> config
+    main --> db
+
+    app --> chat
+    app --> invite
+    app --> media
+    app --> room
+    app --> auth
+    app --> httpx
+    app --> config
+
+    chat --> media
+    chat --> room
+    chat --> auth
+    chat --> httpx
+    chat --> apperr
+
+    invite --> room
+    invite --> auth
+    invite --> httpx
+    invite --> apperr
+
+    media --> room
+    media --> httpx
+    media --> apperr
+
+    room --> auth
+    room --> httpx
+    room --> apperr
+
+    httpx --> apperr
+
+    classDef entry fill:#fde68a,stroke:#b45309,color:#111
+    classDef domain fill:#bfdbfe,stroke:#1d4ed8,color:#111
+    classDef platform fill:#d1fae5,stroke:#047857,color:#111
+    classDef leaf fill:#e5e7eb,stroke:#4b5563,color:#111
+    class main,app entry
+    class chat,invite,media,room domain
+    class httpx,config,db platform
+    class auth,apperr leaf
+```
+
+- `app` เป็นจุดประกอบ dependency ทั้งหมดและผูก route ส่วน `cmd/server` เปิด DB, รัน migration และจัดการ graceful shutdown
+- `room` เป็น domain หลักที่ `chat`, `invite` และ `media` พึ่งพา (ตรวจสมาชิกภาพของห้อง)
+- `auth`, `apperr`, `platform/config` และ `platform/db` ไม่ import package ภายในตัวอื่น ควรรักษาไว้แบบนี้เพื่อไม่ให้เกิด cycle
 
 ## API
 
