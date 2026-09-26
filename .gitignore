@@ -1,0 +1,12 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Go
+/server/bin/
+*.test
+coverage.out
+
+# Local env
+.env
