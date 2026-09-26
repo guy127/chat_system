@@ -40,9 +40,12 @@ func NewIssuer(secret []byte, ttl time.Duration) *Issuer {
 	return &Issuer{secret: secret, ttl: ttl, now: time.Now}
 }
 
-func (i *Issuer) Issue(c Claims) (Session, error) {
+func (i *Issuer) Issue(c Claims) (Session, error) { return i.IssueFor(c, i.ttl) }
+
+// IssueFor is Issue with a lifetime other than the issuer's default.
+func (i *Issuer) IssueFor(c Claims, ttl time.Duration) (Session, error) {
 	now := i.now().UTC()
-	exp := now.Add(i.ttl)
+	exp := now.Add(ttl)
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwtClaims{
 		Room: c.RoomID.String(),
 		Role: c.Role,

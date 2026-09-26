@@ -21,6 +21,12 @@ info:
 
     **Rate limits**: `POST /join` 10/min per IP; sending 5 messages/s per member;
     image uploads 10/min per member (bursts of 5). Exceeding one returns `429 rate_limited`.
+
+    **Service API** (`/service/v1`) is for trusted backends on the internal network, e.g. the medical
+    claims system. They check their own users' permissions, then create a room per external
+    reference and ask for member sessions on their users' behalf. It uses the `serviceKey` scheme,
+    not room JWTs, and is disabled (404) unless `SERVICE_API_KEY` is set. Sessions it issues last
+    `SERVICE_JWT_TTL` (default 15 minutes) instead of 12 hours.
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -44,6 +50,8 @@ tags:
     description: Image upload and download
   - name: realtime
     description: WebSocket connection
+  - name: service
+    description: Server-to-server API for trusted backends (internal network only)
   - name: ops
     description: Operational endpoints
 
@@ -605,6 +613,101 @@ paths:
         "426":
           description: Not a WebSocket upgrade request.
 
+  /service/v1/rooms/{ref}:
+    parameters:
+      - $ref: "#/components/parameters/ServiceRef"
+    put:
+      tags: [service]
+      operationId: ensureServiceRoom
+      summary: Create the room for an external reference if it does not exist
+      description: Idempotent. A later call returns the same room and keeps its original name.
+      security:
+        - serviceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnsureServiceRoomRequest"
+            example:
+              name: "เรื่อง #123"
+      responses:
+        "200":
+          description: The room for this reference.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceRoom"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/ServiceUnauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /service/v1/rooms/{ref}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ServiceRef"
+    post:
+      tags: [service]
+      operationId: createServiceSession
+      summary: Get a member session for an external user
+      description: |
+        Adds the user as a member (role `member`) on first call; later calls return the same
+        `member_id` and refresh `display_name` and `label`. Works on closed rooms so history stays
+        readable; sending is refused there. The caller hands the returned JWT to the user's browser.
+      security:
+        - serviceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceSessionRequest"
+            example:
+              external_user_id: "user:42"
+              display_name: สมชาย ใจดี
+              label: ผู้ยื่น
+      responses:
+        "200":
+          description: Session for this user in this room.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/ServiceUnauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`member_removed`: this user was kicked or banned from the room."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /service/v1/rooms/{ref}/close:
+    parameters:
+      - $ref: "#/components/parameters/ServiceRef"
+    post:
+      tags: [service]
+      operationId: closeServiceRoom
+      summary: Close the room
+      description: Idempotent. Live connections receive `room_closed` and close with 4004.
+      security:
+        - serviceKey: []
+      responses:
+        "204":
+          description: The room is closed.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/ServiceUnauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   securitySchemes:
     roomJWT:
@@ -612,6 +715,10 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Room-bound JWT from `POST /rooms`, `POST /join` or `POST /rooms/{id}/owner-session`. Valid for 12 hours.
+    serviceKey:
+      type: http
+      scheme: bearer
+      description: The shared `SERVICE_API_KEY` (at least 32 characters). Only for `/service/v1`.
 
   parameters:
     RoomId:
@@ -622,6 +729,14 @@ components:
       schema:
         type: string
         format: uuid
+    ServiceRef:
+      name: ref
+      in: path
+      required: true
+      description: The caller's own id for the room, e.g. `claims:ticket:123:public`.
+      schema:
+        type: string
+        pattern: "^[a-z0-9:_-]{1,128}$"
 
   responses:
     InvalidInput:
@@ -680,6 +795,14 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: { code: rate_limited, message: too many requests }
+    ServiceUnauthorized:
+      description: "`unauthorized`: missing or wrong service key."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: unauthorized, message: missing or invalid credentials }
 
   schemas:
     ErrorCode:
@@ -1155,3 +1278,40 @@ components:
       properties:
         type:
           const: pong
+
+    EnsureServiceRoomRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    ServiceRoom:
+      type: object
+      required: [room_id, status]
+      properties:
+        room_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, closed]
+
+    ServiceSessionRequest:
+      type: object
+      required: [external_user_id, display_name]
+      properties:
+        external_user_id:
+          type: string
+          pattern: "^[A-Za-z0-9:_-]{1,128}$"
+          description: The caller's id for this user; the same id always maps to the same member.
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        label:
+          type: string
+          maxLength: 40
+          description: Role shown beside the name, e.g. `เจ้าหน้าที่ตรวจสอบ`. Optional.

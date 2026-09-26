@@ -118,10 +118,12 @@ func (a *testAPI) do(method, path, jwt string, body, out any) int {
 }
 
 type session struct {
-	RoomID     string `json:"room_id"`
-	MemberID   string `json:"member_id"`
-	JWT        string `json:"jwt"`
-	OwnerToken string `json:"owner_token"`
+	RoomID     string    `json:"room_id"`
+	MemberID   string    `json:"member_id"`
+	Role       string    `json:"role"`
+	JWT        string    `json:"jwt"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	OwnerToken string    `json:"owner_token"`
 }
 
 type errBody struct {

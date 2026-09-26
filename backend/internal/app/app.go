@@ -17,6 +17,7 @@ import (
 	"smalltalk/internal/platform/config"
 	"smalltalk/internal/platform/httpx"
 	"smalltalk/internal/room"
+	"smalltalk/internal/service"
 )
 
 // NewRouter builds the API. Background work (rate-limiter eviction, image
@@ -41,6 +42,7 @@ func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broke
 
 	sendLimiter := httpx.NewKeyedLimiter(ctx, 5, 5) // 5 messages/s/member
 	chatSvc := chat.NewService(chat.NewRepository(pool), roomSvc, mediaSvc, broker, sendLimiter)
+	serviceSvc := service.NewService(roomSvc, issuer, cfg.ServiceJWTTTL)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -54,5 +56,6 @@ func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broke
 	invite.NewHandler(inviteSvc, roomHandler, joinLimiter).Register(r)
 	media.NewHandler(mediaSvc, roomHandler).Register(r)
 	chat.NewHandler(chatSvc, hub, roomSvc, roomHandler, issuer, cfg.AllowedOrigins).Register(r)
+	service.NewHandler(serviceSvc, cfg.ServiceAPIKey).Register(r)
 	return r, nil
 }
