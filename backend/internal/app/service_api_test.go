@@ -216,3 +216,32 @@ func TestServiceSentImage(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceRoomsRejectInvites(t *testing.T) {
+	a := newAPI(t)
+	ref := testRef()
+	rm := a.ensureServiceRoom(ref)
+	s, _ := a.serviceSession(ref, "user:1", "A", "")
+	ctx := context.Background()
+
+	// Service rooms have no owner; promote one by hand to reach the invite routes.
+	if _, err := pool.Exec(ctx, `UPDATE room_members SET role = 'owner' WHERE id = $1`, s.MemberID); err != nil {
+		t.Fatal(err)
+	}
+	var e errBody
+	if code := a.do("POST", "/rooms/"+rm.RoomID+"/invites", s.JWT, nil, &e); code != 404 || e.Error.Code != "not_found" {
+		t.Fatalf("create invite = %d %q", code, e.Error.Code)
+	}
+
+	// An invite row that somehow exists must not let anyone in.
+	token := "svc-" + uuid.NewString()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO room_invites (id, room_id, token_hash, expires_at)
+		 VALUES ($1, $2, encode(sha256($3::bytea), 'hex'), now() + interval '1 hour')`,
+		uuid.New(), rm.RoomID, token); err != nil {
+		t.Fatal(err)
+	}
+	if code := a.joinErr(token, "intruder"); code != "not_found" {
+		t.Fatalf("join service room = %q", code)
+	}
+}

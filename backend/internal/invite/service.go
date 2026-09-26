@@ -49,6 +49,10 @@ func (s *Service) Create(ctx context.Context, roomID uuid.UUID, ttl time.Duratio
 	if err != nil {
 		return Created{}, fmt.Errorf("create invite: %w", err)
 	}
+	if rm.ExternalRef != nil {
+		// Service rooms admit only users their backend vouches for.
+		return Created{}, apperr.NotFound
+	}
 	if rm.Status == room.StatusClosed {
 		return Created{}, apperr.RoomClosed
 	}

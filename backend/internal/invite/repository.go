@@ -89,9 +89,12 @@ func (r *Repository) Join(ctx context.Context, tokenHash string, now time.Time, 
 
 	var rm room.Room
 	if err := tx.QueryRow(ctx,
-		`SELECT id, name, status, created_at FROM rooms WHERE id = $1 FOR UPDATE`, inv.RoomID).
-		Scan(&rm.ID, &rm.Name, &rm.Status, &rm.CreatedAt); err != nil {
+		`SELECT id, name, status, external_ref, created_at FROM rooms WHERE id = $1 FOR UPDATE`, inv.RoomID).
+		Scan(&rm.ID, &rm.Name, &rm.Status, &rm.ExternalRef, &rm.CreatedAt); err != nil {
 		return room.Room{}, fmt.Errorf("lock room: %w", err)
+	}
+	if rm.ExternalRef != nil {
+		return room.Room{}, apperr.NotFound
 	}
 	if rm.Status == room.StatusClosed {
 		return room.Room{}, apperr.RoomClosed
