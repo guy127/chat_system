@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -43,7 +44,48 @@ func NewHandler(svc *Service, hub *Hub, rooms *room.Service, roomHandler *room.H
 
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/rooms/:id/messages", h.roomHandler.RequireMember(), h.history)
+	r.POST("/rooms/summaries", h.summaries)
 	r.GET("/ws", h.serveWS)
+}
+
+const maxSummaryRooms = 100
+
+// summaries takes every room session this browser holds and answers for
+// each one independently, so one expired or revoked session does not fail
+// the whole list. Each entry proves membership with its own room JWT.
+func (h *Handler) summaries(c *gin.Context) {
+	var req struct {
+		Rooms []struct {
+			RoomID     uuid.UUID `json:"room_id"`
+			JWT        string    `json:"jwt"`
+			LastReadID string    `json:"last_read_id"`
+		} `json:"rooms"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Error(c, apperr.Invalid("invalid JSON body"))
+		return
+	}
+	if len(req.Rooms) > maxSummaryRooms {
+		httpx.Error(c, apperr.Invalid(fmt.Sprintf("at most %d rooms per request", maxSummaryRooms)))
+		return
+	}
+	out := make([]Summary, 0, len(req.Rooms))
+	for _, r := range req.Rooms {
+		claims, err := h.issuer.Parse(r.JWT)
+		if err != nil || claims.RoomID != r.RoomID {
+			out = append(out, Summary{RoomID: r.RoomID, State: apperr.Unauthorized.Code})
+			continue
+		}
+		sum, err := h.svc.Summarize(c.Request.Context(), SummaryQuery{
+			RoomID: r.RoomID, MemberID: claims.MemberID, LastReadID: r.LastReadID,
+		})
+		if err != nil {
+			httpx.Error(c, err)
+			return
+		}
+		out = append(out, sum)
+	}
+	c.JSON(http.StatusOK, gin.H{"rooms": out})
 }
 
 func (h *Handler) history(c *gin.Context) {
@@ -147,10 +189,11 @@ func writeLoop(ctx context.Context, conn *websocket.Conn, c *Client) {
 }
 
 type inbound struct {
-	Type          string `json:"type"`
-	ClientMsgID   string `json:"client_msg_id"`
-	Body          string `json:"body"`
-	LastMessageID string `json:"last_message_id"`
+	Type          string     `json:"type"`
+	ClientMsgID   string     `json:"client_msg_id"`
+	Body          string     `json:"body"`
+	ImageID       *uuid.UUID `json:"image_id"`
+	LastMessageID string     `json:"last_message_id"`
 }
 
 func (h *Handler) readLoop(ctx context.Context, conn *websocket.Conn, c *Client) {
@@ -195,7 +238,7 @@ func (h *Handler) send(ctx context.Context, c *Client, in inbound) {
 		c.push(outbound{data: errorFrame(apperr.Invalid("client_msg_id must be a UUID"), in.ClientMsgID)})
 		return
 	}
-	msg, err := h.svc.Send(ctx, c.RoomID, c.MemberID, clientMsgID, in.Body)
+	msg, err := h.svc.Send(ctx, c.RoomID, c.MemberID, clientMsgID, in.Body, in.ImageID)
 	if err != nil {
 		h.pushError(ctx, c, err, in.ClientMsgID)
 		return

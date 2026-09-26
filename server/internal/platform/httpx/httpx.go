@@ -26,6 +26,8 @@ var statusByCode = map[string]int{
 	apperr.Banned.Code:          http.StatusForbidden,
 	apperr.Kicked.Code:          http.StatusForbidden,
 	apperr.MessageTooLong.Code:  http.StatusBadRequest,
+	apperr.ImageTooLarge.Code:   http.StatusRequestEntityTooLarge,
+	apperr.ImageInvalid.Code:    http.StatusUnsupportedMediaType,
 	"invalid_input":             http.StatusBadRequest,
 }
 

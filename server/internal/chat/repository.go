@@ -7,7 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"smalltalk/internal/apperr"
 )
 
 type Repository struct {
@@ -16,27 +19,45 @@ type Repository struct {
 
 func NewRepository(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
-const messageSelect = `SELECT m.id, m.room_id, m.member_id, rm.display_name, m.client_msg_id, m.body, m.created_at
-	FROM messages m JOIN room_members rm ON rm.id = m.member_id `
+const messageSelect = `SELECT m.id, m.room_id, m.member_id, rm.display_name, m.client_msg_id, m.body, m.created_at,
+		i.id, i.content_type, i.width, i.height
+	FROM messages m
+	JOIN room_members rm ON rm.id = m.member_id
+	LEFT JOIN images i ON i.id = m.image_id `
 
 func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
-	err := row.Scan(&m.ID, &m.RoomID, &m.MemberID, &m.DisplayName, &m.ClientMsgID, &m.Body, &m.CreatedAt)
+	var imgID *uuid.UUID
+	var imgType *string
+	var imgW, imgH *int
+	err := row.Scan(&m.ID, &m.RoomID, &m.MemberID, &m.DisplayName, &m.ClientMsgID, &m.Body, &m.CreatedAt,
+		&imgID, &imgType, &imgW, &imgH)
 	m.CreatedAt = m.CreatedAt.UTC()
+	if imgID != nil {
+		m.Image = &ImageRef{ID: *imgID, ContentType: *imgType, Width: *imgW, Height: *imgH}
+	}
 	return m, err
 }
 
 // Insert stores msg unless (room_id, client_msg_id) already exists, in which
 // case it returns the stored message and inserted=false.
 func (r *Repository) Insert(ctx context.Context, msg Message) (stored Message, inserted bool, err error) {
+	var imageID *uuid.UUID
+	if msg.Image != nil {
+		imageID = &msg.Image.ID
+	}
 	err = r.db.QueryRow(ctx,
-		`INSERT INTO messages (id, room_id, member_id, client_msg_id, body) VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO messages (id, room_id, member_id, client_msg_id, body, image_id) VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (room_id, client_msg_id) DO NOTHING
 		 RETURNING created_at`,
-		msg.ID, msg.RoomID, msg.MemberID, msg.ClientMsgID, msg.Body).Scan(&msg.CreatedAt)
+		msg.ID, msg.RoomID, msg.MemberID, msg.ClientMsgID, msg.Body, imageID).Scan(&msg.CreatedAt)
 	if err == nil {
 		msg.CreatedAt = msg.CreatedAt.UTC()
 		return msg, true, nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.ConstraintName == "idx_messages_image_id" {
+		return Message{}, false, apperr.Invalid("this image was already sent")
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Message{}, false, fmt.Errorf("insert message: %w", err)
@@ -74,4 +95,17 @@ func (r *Repository) list(ctx context.Context, sql string, args ...any) ([]Messa
 		return nil, fmt.Errorf("scan messages: %w", err)
 	}
 	return msgs, nil
+}
+
+// UnreadCount counts messages from other members after cursor, capped at limit.
+func (r *Repository) UnreadCount(ctx context.Context, roomID, memberID uuid.UUID, cursor string, limit int) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx,
+		`SELECT count(*) FROM (
+			SELECT 1 FROM messages WHERE room_id = $1 AND id > $2 AND member_id <> $3 LIMIT $4
+		 ) t`, roomID, cursor, memberID, limit).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count unread: %w", err)
+	}
+	return n, nil
 }

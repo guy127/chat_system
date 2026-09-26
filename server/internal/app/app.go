@@ -13,12 +13,14 @@ import (
 	"smalltalk/internal/auth"
 	"smalltalk/internal/chat"
 	"smalltalk/internal/invite"
+	"smalltalk/internal/media"
 	"smalltalk/internal/platform/config"
 	"smalltalk/internal/platform/httpx"
 	"smalltalk/internal/room"
 )
 
-// NewRouter builds the API. Background work (rate-limiter eviction) stops when ctx is done.
+// NewRouter builds the API. Background work (rate-limiter eviction, image
+// cleanup) stops when ctx is done.
 func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broker chat.Broker) (*gin.Engine, error) {
 	issuer := auth.NewIssuer(cfg.JWTSecret, cfg.JWTTTL)
 	hub := chat.NewHub(broker)
@@ -29,8 +31,16 @@ func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broke
 	joinLimiter := httpx.NewKeyedLimiter(ctx, rate.Every(time.Minute/10), 10) // 10 joins/min/IP
 	inviteSvc := invite.NewService(invite.NewRepository(pool), roomSvc, issuer, cfg.AppBaseURL)
 
+	store, err := media.NewFSStorage(cfg.MediaDir)
+	if err != nil {
+		return nil, err
+	}
+	uploadLimiter := httpx.NewKeyedLimiter(ctx, rate.Every(6*time.Second), 5) // 10 images/min/member, bursts of 5
+	mediaSvc := media.NewService(media.NewRepository(pool), store, roomSvc, uploadLimiter)
+	go mediaSvc.RunCleanup(ctx, 10*time.Minute)
+
 	sendLimiter := httpx.NewKeyedLimiter(ctx, 5, 5) // 5 messages/s/member
-	chatSvc := chat.NewService(chat.NewRepository(pool), roomSvc, broker, sendLimiter)
+	chatSvc := chat.NewService(chat.NewRepository(pool), roomSvc, mediaSvc, broker, sendLimiter)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -42,6 +52,7 @@ func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broke
 
 	roomHandler.Register(r)
 	invite.NewHandler(inviteSvc, roomHandler, joinLimiter).Register(r)
+	media.NewHandler(mediaSvc, roomHandler).Register(r)
 	chat.NewHandler(chatSvc, hub, roomSvc, roomHandler, issuer, cfg.AllowedOrigins).Register(r)
 	return r, nil
 }

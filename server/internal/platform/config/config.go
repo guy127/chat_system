@@ -21,6 +21,8 @@ type Config struct {
 	AllowedOrigins []string
 	// TrustedProxies are CIDRs/IPs whose X-Forwarded-For is trusted for client IPs.
 	TrustedProxies []string
+	// MediaDir is where uploaded images are stored.
+	MediaDir string
 }
 
 func Load() (Config, error) {
@@ -32,6 +34,7 @@ func Load() (Config, error) {
 		AppBaseURL:     strings.TrimRight(os.Getenv("APP_BASE_URL"), "/"),
 		AllowedOrigins: list(os.Getenv("ALLOWED_ORIGINS")),
 		TrustedProxies: list(env("TRUSTED_PROXIES", "127.0.0.1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16")),
+		MediaDir:       env("MEDIA_DIR", "./data/images"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

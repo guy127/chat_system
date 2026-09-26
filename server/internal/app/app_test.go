@@ -8,7 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
+	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -61,6 +65,7 @@ func newAPI(t *testing.T) *testAPI {
 	cfg := config.Config{
 		JWTSecret: []byte(strings.Repeat("s", 32)),
 		JWTTTL:    time.Hour,
+		MediaDir:  t.TempDir(),
 	}
 	r, err := NewRouter(ctx, cfg, pool, chat.NewMemoryBroker())
 	if err != nil {
@@ -482,5 +487,175 @@ func TestRoomFull(t *testing.T) {
 	}
 	if code := a.joinErr(token, "one too many"); code != "room_full" {
 		t.Fatalf("join full room = %q", code)
+	}
+}
+
+func (a *testAPI) upload(s session, filename string, data []byte) (int, map[string]any) {
+	a.t.Helper()
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	fw, _ := w.CreateFormFile("image", filename)
+	_, _ = fw.Write(data)
+	_ = w.Close()
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", a.srv.URL+"/rooms/"+s.RoomID+"/images", &body)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+s.JWT)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	var out map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return res.StatusCode, out
+}
+
+func (a *testAPI) getImage(s session, roomID, imageID string) (int, string, []byte) {
+	a.t.Helper()
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", a.srv.URL+"/rooms/"+roomID+"/images/"+imageID, nil)
+	req.Header.Set("Authorization", "Bearer "+s.JWT)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, res.Header.Get("Content-Type"), b
+}
+
+func pngBytes(t *testing.T, w, h int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestImages(t *testing.T) {
+	a := newAPI(t)
+	host := a.createRoom()
+	_, token := a.invite(host, nil)
+	guest, _ := a.join(token, "guest")
+	gc := a.dial(guest)
+	gc.next("presence")
+	hc := a.dial(host)
+
+	code, img := a.upload(host, "photo.png", pngBytes(t, 30, 20))
+	if code != 201 || img["content_type"] != "image/png" || img["width"] != 30.0 || img["height"] != 20.0 {
+		t.Fatalf("upload = %d %v", code, img)
+	}
+	imageID := img["id"].(string)
+
+	// Uploads are not announced; sending the message with image_id is.
+	cmid := uuid.NewString()
+	hc.send(map[string]any{"type": "send", "client_msg_id": cmid, "body": "", "image_id": imageID})
+	hc.next("ack")
+	m := gc.next("message")
+	ref, _ := m["image"].(map[string]any)
+	if ref == nil || ref["id"] != imageID || ref["width"] != 30.0 {
+		t.Fatalf("message image = %v", m)
+	}
+	// A retry with the same client_msg_id is fine; reusing the image is not.
+	hc.send(map[string]any{"type": "send", "client_msg_id": cmid, "body": "", "image_id": imageID})
+	hc.next("ack")
+	hc.send(map[string]any{"type": "send", "client_msg_id": uuid.NewString(), "body": "again", "image_id": imageID})
+	if e := hc.next("error"); e["code"] != "invalid_input" {
+		t.Fatalf("reuse = %v", e)
+	}
+
+	// Members can fetch it; history carries the reference.
+	code, ct, data := a.getImage(guest, host.RoomID, imageID)
+	if code != 200 || ct != "image/png" || len(data) == 0 {
+		t.Fatalf("get image = %d %q %d bytes", code, ct, len(data))
+	}
+	var page struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	a.do("GET", "/rooms/"+host.RoomID+"/messages", guest.JWT, nil, &page)
+	if len(page.Messages) != 1 || page.Messages[0]["image"] == nil {
+		t.Fatalf("history = %v", page.Messages)
+	}
+
+	// Someone else's upload cannot be sent by a guest.
+	_, img2 := a.upload(host, "b.png", pngBytes(t, 2, 2))
+	gc.send(map[string]any{"type": "send", "client_msg_id": uuid.NewString(), "body": "", "image_id": img2["id"]})
+	if e := gc.next("error"); e["code"] != "forbidden" {
+		t.Fatalf("foreign image = %v", e)
+	}
+
+	// Other rooms cannot read it, even with a valid JWT for their own room.
+	other := a.createRoom()
+	if code, _, _ := a.getImage(other, host.RoomID, imageID); code != 401 {
+		t.Fatalf("cross-room get = %d", code)
+	}
+	if code, _, _ := a.getImage(other, other.RoomID, imageID); code != 404 {
+		t.Fatalf("wrong-room path get = %d", code)
+	}
+
+	if code, e := a.upload(host, "x.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)); code != 415 {
+		t.Fatalf("svg upload = %d %v", code, e)
+	}
+	if code, _ := a.upload(host, "big.png", make([]byte, 10<<20+1)); code != 413 {
+		t.Fatalf("oversized upload = %d", code)
+	}
+
+	// Kicked members lose access to images too.
+	a.do("POST", "/rooms/"+host.RoomID+"/members/"+guest.MemberID+"/kick", host.JWT, nil, nil)
+	if code, _, _ := a.getImage(guest, host.RoomID, imageID); code != 403 {
+		t.Fatalf("kicked get = %d", code)
+	}
+}
+
+func TestRoomSummaries(t *testing.T) {
+	a := newAPI(t)
+	host := a.createRoom()
+	_, token := a.invite(host, nil)
+	guest, _ := a.join(token, "guest")
+	kicked, _ := a.join(token, "bye")
+	hc := a.dial(host)
+
+	var firstID string
+	for i := range 3 {
+		hc.send(map[string]string{"type": "send", "client_msg_id": uuid.NewString(), "body": fmt.Sprintf("m%d", i)})
+		ack := hc.next("ack")
+		if i == 0 {
+			firstID = ack["id"].(string)
+		}
+	}
+	a.do("POST", "/rooms/"+host.RoomID+"/members/"+kicked.MemberID+"/kick", host.JWT, nil, nil)
+
+	var res struct {
+		Rooms []struct {
+			RoomID      string         `json:"room_id"`
+			State       string         `json:"state"`
+			Name        string         `json:"name"`
+			Status      string         `json:"status"`
+			Unread      int            `json:"unread"`
+			LastMessage map[string]any `json:"last_message"`
+		} `json:"rooms"`
+	}
+	req := map[string]any{"rooms": []map[string]string{
+		{"room_id": host.RoomID, "jwt": guest.JWT, "last_read_id": firstID},
+		{"room_id": host.RoomID, "jwt": host.JWT, "last_read_id": ""},
+		{"room_id": host.RoomID, "jwt": kicked.JWT},
+		{"room_id": uuid.NewString(), "jwt": guest.JWT}, // token for a different room
+		{"room_id": host.RoomID, "jwt": "garbage"},
+	}}
+	if code := a.do("POST", "/rooms/summaries", "", req, &res); code != 200 {
+		t.Fatalf("summaries status %d", code)
+	}
+	r := res.Rooms
+	if len(r) != 5 {
+		t.Fatalf("got %d summaries", len(r))
+	}
+	if r[0].State != "active" || r[0].Name != "ห้องทดสอบ" || r[0].Unread != 2 || r[0].LastMessage["body"] != "m2" {
+		t.Fatalf("guest summary = %+v", r[0])
+	}
+	if r[1].Unread != 0 {
+		t.Fatalf("host's own messages counted as unread: %+v", r[1])
+	}
+	if r[2].State != "kicked" || r[3].State != "unauthorized" || r[4].State != "unauthorized" {
+		t.Fatalf("states = %q %q %q", r[2].State, r[3].State, r[4].State)
 	}
 }

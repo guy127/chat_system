@@ -25,6 +25,8 @@ var (
 	Banned          = &Error{"banned", "you are banned from this room"}
 	Kicked          = &Error{"kicked", "you were removed from this room"}
 	MessageTooLong  = &Error{"message_too_long", "message exceeds 2000 characters"}
+	ImageTooLarge   = &Error{"image_too_large", "image exceeds 10 MB"}
+	ImageInvalid    = &Error{"image_unsupported", "only JPEG, PNG and GIF images are supported"}
 )
 
 // Invalid reports a malformed request with a specific explanation.
