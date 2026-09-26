@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import Avatar from "@/components/Avatar";
+import Icon from "@/components/Icon";
 import { useRoomSummaries, type RoomEntry } from "@/hooks/useRoomSummaries";
 import { previewText } from "@/lib/messages";
 import { forgetRoom } from "@/lib/session";
@@ -38,7 +40,7 @@ export default function RoomList({ activeRoomId }: Props) {
   const entries = useRoomSummaries();
 
   if (entries.length === 0) {
-    return <p className="muted small-text">ยังไม่มีห้อง สร้างห้องใหม่หรือเปิดลิงก์เชิญที่ได้รับมา</p>;
+    return <p className="muted small-text">ยังไม่มีห้องเลย ลองเปิดห้องใหม่หรือใช้ลิงก์เชิญจากเพื่อนดูสิ</p>;
   }
 
   return (
@@ -52,18 +54,21 @@ export default function RoomList({ activeRoomId }: Props) {
         const unread = s.room_id === activeRoomId ? 0 : (summary?.unread ?? 0);
         const content = (
           <>
-            <span className="room-row">
-              <span className="room-name">
-                {name}
-                {s.role === "owner" && <span className="badge">Host</span>}
+            <Avatar id={s.room_id} name={name} size="md" />
+            <span className="room-text">
+              <span className="room-row">
+                <span className="room-name">
+                  {name}
+                  {s.role === "owner" && <span className="badge">👑</span>}
+                </span>
+                {last && <span className="muted small-text">{when(last.created_at)}</span>}
               </span>
-              {last && <span className="muted small-text">{when(last.created_at)}</span>}
-            </span>
-            <span className="room-row">
-              <span className={note ? "room-preview muted" : "room-preview"}>
-                {note ?? (last ? `${last.display_name}: ${previewText(last)}` : "ยังไม่มีข้อความ")}
+              <span className="room-row">
+                <span className={note ? "room-preview muted" : "room-preview"}>
+                  {note ?? (last ? `${last.display_name}: ${previewText(last)}` : "ยังไม่มีข้อความ")}
+                </span>
+                {unread > 0 && <span className="unread">{unread >= 99 ? "99+" : unread}</span>}
               </span>
-              {unread > 0 && <span className="unread">{unread >= 99 ? "99+" : unread}</span>}
             </span>
           </>
         );
@@ -88,7 +93,7 @@ export default function RoomList({ activeRoomId }: Props) {
                 if (confirm(warn)) forgetRoom(s.room_id);
               }}
             >
-              ✕
+              <Icon name="close" size={16} />
             </button>
           </li>
         );

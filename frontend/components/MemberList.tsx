@@ -1,5 +1,6 @@
 "use client";
 
+import Avatar from "@/components/Avatar";
 import type { Member } from "@/types/chat";
 
 interface Props {
@@ -16,33 +17,37 @@ export default function MemberList({ members, labels, selfId, canModerate, onRem
 
   return (
     <section className="panel">
-      <h2>
-        สมาชิก{" "}
-        <span className="muted">
-          · ออนไลน์ {online}/{members.length}
+      <h2 className="section-title">
+        สมาชิก
+        <span className="pill online-pill">
+          ออนไลน์ {online}/{members.length}
         </span>
       </h2>
       <ul className="members">
-        {sorted.map((m) => (
-          <li key={m.id}>
-            <span className={m.online ? "dot on" : "dot"} aria-label={m.online ? "ออนไลน์" : "ออฟไลน์"} />
-            <span className="member-name">
-              {labels.get(m.id) ?? m.display_name}
-              {m.role === "owner" && <span className="badge">Host</span>}
-              {m.id === selfId && <span className="muted"> (คุณ)</span>}
-            </span>
-            {canModerate && m.role !== "owner" && (
-              <span className="member-actions">
-                <button className="small" onClick={() => onRemove(m, false)}>
-                  เตะ
-                </button>
-                <button className="small danger" onClick={() => onRemove(m, true)}>
-                  แบน
-                </button>
+        {sorted.map((m) => {
+          const name = labels.get(m.id) ?? m.display_name;
+          return (
+            <li key={m.id} className={m.online ? undefined : "offline"}>
+              <Avatar id={m.id} name={name} size="md" online={m.online} />
+              <span className="member-name">
+                {name}
+                {m.role === "owner" && <span className="badge">👑 Host</span>}
+                {m.id === selfId && <span className="badge soft">คุณ</span>}
               </span>
-            )}
-          </li>
-        ))}
+              <span className="sr-only">{m.online ? "ออนไลน์" : "ออฟไลน์"}</span>
+              {canModerate && m.role !== "owner" && (
+                <span className="member-actions">
+                  <button className="small" onClick={() => onRemove(m, false)}>
+                    เตะ
+                  </button>
+                  <button className="small danger" onClick={() => onRemove(m, true)}>
+                    แบน
+                  </button>
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

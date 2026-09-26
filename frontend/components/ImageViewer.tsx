@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import Icon from "@/components/Icon";
+
 interface Props {
   url: string;
   onClose: () => void;
@@ -20,9 +22,11 @@ export default function ImageViewer({ url, onClose }: Props) {
       <img src={url} alt="รูปภาพขนาดเต็ม" onClick={(e) => e.stopPropagation()} />
       <div className="viewer-actions" onClick={(e) => e.stopPropagation()}>
         <a className="button" href={url} download="smalltalk-image">
-          ดาวน์โหลด
+          <Icon name="download" size={18} /> บันทึกรูป
         </a>
-        <button onClick={onClose}>ปิด</button>
+        <button onClick={onClose}>
+          <Icon name="close" size={18} /> ปิด
+        </button>
       </div>
     </div>
   );

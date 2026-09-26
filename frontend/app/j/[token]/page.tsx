@@ -1,9 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState, type FormEvent } from "react";
 
+import Avatar from "@/components/Avatar";
+import DeadEnd from "@/components/DeadEnd";
+import Mascot from "@/components/Mascot";
 import { useStored } from "@/hooks/useStored";
 import { api, ApiError } from "@/lib/api";
 import { errorText } from "@/lib/errors";
@@ -39,35 +41,31 @@ export default function JoinPage({ params }: { params: Promise<{ token: string }
     }
   };
 
+  if (deadEnd) return <DeadEnd title="อุ๊ย เข้าห้องไม่ได้">{error}</DeadEnd>;
+
   return (
     <main className="center">
-      <form className="card" onSubmit={submit}>
-        <h1>เข้าร่วมห้องแชท</h1>
-        {deadEnd ? (
-          <>
-            <p className="error">{error}</p>
-            <Link href="/">กลับหน้าแรก</Link>
-          </>
-        ) : (
-          <>
-            <label>
-              ชื่อเล่นของคุณ
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={32}
-                required
-                autoFocus
-                placeholder="เช่น สมชาย"
-              />
-            </label>
-            <button className="primary wide" disabled={busy || name.trim() === ""}>
-              {busy ? "กำลังเข้าห้อง…" : "เข้าห้อง"}
-            </button>
-            {error && <p className="error">{error}</p>}
-            <p className="muted small-text">ไม่ต้องสมัครสมาชิก ชื่อนี้จะแสดงให้คนในห้องเห็น</p>
-          </>
-        )}
+      <form className="card join-card" onSubmit={submit}>
+        <Mascot size={96} className="float" />
+        <h1>มีคนชวนคุณมาคุย 💌</h1>
+        <p className="muted">ตั้งชื่อเล่นสักหน่อย แล้วเข้าห้องได้เลย</p>
+        <label className="name-field big">
+          <Avatar id="me" name={name} size="md" />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={32}
+            required
+            autoFocus
+            placeholder="ชื่อเล่นของคุณ"
+            aria-label="ชื่อเล่นของคุณ"
+          />
+        </label>
+        <button className="primary wide big" disabled={busy || name.trim() === ""}>
+          {busy ? "กำลังเข้าห้อง…" : "เข้าห้องเลย →"}
+        </button>
+        {error && <p className="error">{error}</p>}
+        <p className="muted small-text">🔒 ไม่ต้องสมัครสมาชิก ชื่อนี้จะแสดงให้คนในห้องเห็นเท่านั้น</p>
       </form>
     </main>
   );

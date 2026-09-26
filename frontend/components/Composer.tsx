@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 
+import Icon from "@/components/Icon";
 import { codeText } from "@/lib/errors";
 import { ACCEPT_IMAGES, ImageError, prepareImage, type PreparedImage } from "@/lib/images";
 import { MAX_BODY_LENGTH } from "@/types/chat";
@@ -13,7 +14,7 @@ interface Props {
   onError: (message: string) => void;
 }
 
-export default function Composer({ disabled, placeholder = "พิมพ์ข้อความ…", onSend, onError }: Props) {
+export default function Composer({ disabled, placeholder = "พิมพ์อะไรสักหน่อย…", onSend, onError }: Props) {
   const [body, setBody] = useState("");
   const [image, setImage] = useState<PreparedImage | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -73,8 +74,8 @@ export default function Composer({ disabled, placeholder = "พิมพ์ข�
             <>
               {/* eslint-disable-next-line @next/next/no-img-element -- local preview */}
               <img src={image.previewURL} alt="รูปที่จะส่ง" />
-              <button type="button" className="small" onClick={clearImage} aria-label="เอารูปออก">
-                ✕
+              <button type="button" onClick={clearImage} aria-label="เอารูปออก">
+                <Icon name="close" size={14} />
               </button>
             </>
           ) : (
@@ -85,13 +86,13 @@ export default function Composer({ disabled, placeholder = "พิมพ์ข�
       <div className="composer-row">
         <button
           type="button"
-          className="icon"
+          className="icon-button attach"
           onClick={() => fileInput.current?.click()}
           disabled={disabled || preparing}
           aria-label="แนบรูป"
           title="แนบรูป (ไม่เกิน 10 MB)"
         >
-          🖼️
+          <Icon name="image" />
         </button>
         <input
           ref={fileInput}
@@ -104,23 +105,25 @@ export default function Composer({ disabled, placeholder = "พิมพ์ข�
             if (file) void attach(file);
           }}
         />
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          placeholder={image ? "เพิ่มคำบรรยาย (ไม่บังคับ)…" : placeholder}
-          disabled={disabled}
-          rows={1}
-          aria-label="ข้อความ"
-        />
-        {length > MAX_BODY_LENGTH - 200 && (
-          <span className={tooLong ? "counter over" : "counter"}>
-            {length}/{MAX_BODY_LENGTH}
-          </span>
-        )}
-        <button type="submit" className="primary" disabled={!canSend}>
-          ส่ง
+        <div className="composer-field">
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            placeholder={image ? "เพิ่มแคปชันหน่อยมั้ย…" : placeholder}
+            disabled={disabled}
+            rows={1}
+            aria-label="ข้อความ"
+          />
+          {length > MAX_BODY_LENGTH - 200 && (
+            <span className={tooLong ? "counter over" : "counter"}>
+              {length}/{MAX_BODY_LENGTH}
+            </span>
+          )}
+        </div>
+        <button type="submit" className="send" disabled={!canSend} aria-label="ส่ง">
+          <Icon name="send" />
         </button>
       </div>
     </form>

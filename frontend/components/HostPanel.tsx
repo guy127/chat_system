@@ -3,6 +3,7 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useState } from "react";
 
+import Icon from "@/components/Icon";
 import { api } from "@/lib/api";
 import { errorText } from "@/lib/errors";
 import { inviteLink, loadInvite, saveInvite } from "@/lib/session";
@@ -15,8 +16,8 @@ interface Props {
 }
 
 const TTL_OPTIONS = [
-  { label: "1 ชั่วโมง", minutes: 60 },
-  { label: "24 ชั่วโมง", minutes: 24 * 60 },
+  { label: "1 ชม.", minutes: 60 },
+  { label: "24 ชม.", minutes: 24 * 60 },
   { label: "7 วัน", minutes: 7 * 24 * 60 },
 ];
 
@@ -101,8 +102,8 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
   if (roomClosed) {
     return (
       <section className="panel">
-        <h2>ห้องปิดแล้ว</h2>
-        <p className="muted">ไม่สามารถเชิญคนเพิ่มหรือส่งข้อความได้อีก ประวัติแชทยังเปิดอ่านได้</p>
+        <h2 className="section-title">ห้องปิดแล้ว 🌙</h2>
+        <p className="muted small-text">เชิญคนเพิ่มหรือส่งข้อความไม่ได้แล้ว แต่ยังย้อนอ่านแชทเก่าได้นะ</p>
       </section>
     );
   }
@@ -118,69 +119,91 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
     }
   };
 
+  const settings = (
+    <>
+      <div className="field-label">ลิงก์ใช้ได้นาน</div>
+      <div className="segmented small" role="radiogroup" aria-label="อายุลิงก์">
+        {TTL_OPTIONS.map((o) => (
+          <button
+            key={o.minutes}
+            type="button"
+            role="radio"
+            aria-checked={ttl === o.minutes}
+            onClick={() => setTtl(o.minutes)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <label>
+        ใช้ได้กี่ครั้ง
+        <input
+          type="number"
+          min={1}
+          max={200}
+          inputMode="numeric"
+          placeholder="ไม่จำกัด ♾️"
+          value={maxUses}
+          onChange={(e) => setMaxUses(e.target.value)}
+        />
+      </label>
+      <button className="primary wide" onClick={issueNew} disabled={busy}>
+        <Icon name="sparkles" size={18} />{" "}
+        {active.length > 0 ? "สร้างลิงก์ใหม่ (ลิงก์เดิมจะใช้ไม่ได้)" : "สร้างลิงก์เชิญ"}
+      </button>
+    </>
+  );
+
   return (
     <section className="panel">
-      <h2>ชวนเพื่อนเข้าห้อง</h2>
+      <h2 className="section-title">ชวนเพื่อนเข้าห้อง 💌</h2>
       {current ? (
         <div className="invite">
-          <div className="invite-link">
-            <input value={url} readOnly aria-label="ลิงก์เชิญ" onFocus={(e) => e.target.select()} />
-            <button className="primary" onClick={() => copy(url)}>
-              {copied ? "คัดลอกแล้ว ✓" : "คัดลอก"}
-            </button>
+          <div className="invite-ticket">
+            <span className="invite-url" title={url}>
+              {url.replace(/^https?:\/\//, "")}
+            </span>
+            <span className="invite-meta">
+              ⏳ หมดอายุ {dateFmt.format(new Date(current.expires_at))}
+              {current.max_uses != null &&
+                ` · ใช้ไป ${active.find((i) => i.id === current.id)?.used_count ?? 0}/${current.max_uses}`}
+            </span>
           </div>
           <div className="invite-actions">
+            <button className={copied ? "primary copied" : "primary"} onClick={() => copy(url)}>
+              <Icon name={copied ? "check" : "copy"} size={18} /> {copied ? "ก๊อปแล้ว!" : "ก๊อปลิงก์"}
+            </button>
             {canShare && (
-              <button className="small" onClick={share}>
-                แชร์…
+              <button onClick={share} aria-label="แชร์">
+                <Icon name="share" size={18} /> แชร์
               </button>
             )}
-            <button className="small" onClick={() => setShowQR((v) => !v)} aria-expanded={showQR}>
-              {showQR ? "ซ่อน QR" : "แสดง QR"}
+            <button
+              className={showQR ? "active" : undefined}
+              onClick={() => setShowQR((v) => !v)}
+              aria-expanded={showQR}
+              aria-label={showQR ? "ซ่อน QR" : "แสดง QR"}
+            >
+              <Icon name="qr" size={18} /> QR
             </button>
           </div>
           {showQR && (
             <div className="qr">
-              <QRCodeSVG value={url} size={200} marginSize={2} bgColor="#ffffff" fgColor="#000000" />
+              <QRCodeSVG value={url} size={200} marginSize={2} bgColor="#ffffff" fgColor="#2a1f3d" />
+              <span className="muted small-text">ให้เพื่อนสแกนด้วยกล้องมือถือได้เลย 📷</span>
             </div>
           )}
-          <p className="muted small-text">
-            หมดอายุ {dateFmt.format(new Date(current.expires_at))}
-            {current.max_uses != null &&
-              ` · ใช้แล้ว ${active.find((i) => i.id === current.id)?.used_count ?? 0}/${current.max_uses}`}
-          </p>
+          <details className="more">
+            <summary>ตั้งค่าลิงก์ใหม่</summary>
+            <div className="stack">{settings}</div>
+          </details>
         </div>
       ) : (
-        <p className="muted">ยังไม่มีลิงก์เชิญที่ใช้งานได้ กดสร้างลิงก์ใหม่เพื่อชวนคนเข้าห้อง</p>
+        <div className="stack">
+          <p className="muted small-text">ยังไม่มีลิงก์เชิญที่ใช้ได้ สร้างใหม่เพื่อชวนเพื่อนเข้าห้องกัน</p>
+          {settings}
+        </div>
       )}
-
-      <div className="invite-form">
-        <label>
-          อายุลิงก์
-          <select value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
-            {TTL_OPTIONS.map((o) => (
-              <option key={o.minutes} value={o.minutes}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          ใช้ได้กี่ครั้ง
-          <input
-            type="number"
-            min={1}
-            max={200}
-            inputMode="numeric"
-            placeholder="ไม่จำกัด"
-            value={maxUses}
-            onChange={(e) => setMaxUses(e.target.value)}
-          />
-        </label>
-      </div>
-      <button className="primary wide" onClick={issueNew} disabled={busy}>
-        {active.length > 0 ? "ยกเลิกลิงก์เดิมและสร้างลิงก์ใหม่" : "สร้างลิงก์เชิญ"}
-      </button>
 
       {active.length > (current ? 1 : 0) && (
         <ul className="invites">
@@ -198,23 +221,24 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
             ))}
         </ul>
       )}
-      {current && (
-        <button className="link danger-text" onClick={() => revoke(current.id)}>
-          ยกเลิกลิงก์นี้
-        </button>
-      )}
 
       {error && <p className="error">{error}</p>}
 
-      <hr />
-      <button
-        className="danger wide"
-        onClick={() => {
-          if (confirm("ปิดห้องนี้? ทุกคนจะถูกตัดออกและเข้าห้องไม่ได้อีก")) onClose();
-        }}
-      >
-        ปิดห้อง
-      </button>
+      <div className="danger-zone">
+        {current && (
+          <button className="small ghost" onClick={() => revoke(current.id)}>
+            ยกเลิกลิงก์นี้
+          </button>
+        )}
+        <button
+          className="small danger"
+          onClick={() => {
+            if (confirm("ปิดห้องนี้? ทุกคนจะถูกตัดออกและเข้าห้องไม่ได้อีก")) onClose();
+          }}
+        >
+          <Icon name="power" size={16} /> ปิดห้อง
+        </button>
+      </div>
     </section>
   );
 }

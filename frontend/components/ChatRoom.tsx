@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
+import Avatar from "@/components/Avatar";
 import Composer from "@/components/Composer";
+import DeadEnd from "@/components/DeadEnd";
 import HostPanel from "@/components/HostPanel";
+import Icon from "@/components/Icon";
 import ImageViewer from "@/components/ImageViewer";
 import MemberList from "@/components/MemberList";
 import MessageList from "@/components/MessageList";
@@ -28,7 +31,7 @@ const endText: Record<EndReason, string> = {
 const statusText = {
   connecting: "กำลังเชื่อมต่อ…",
   open: "เชื่อมต่อแล้ว",
-  reconnecting: "กำลังเชื่อมต่อใหม่…",
+  reconnecting: "เน็ตหลุด กำลังต่อใหม่…",
   ended: "ตัดการเชื่อมต่อ",
 };
 
@@ -237,17 +240,7 @@ export default function ChatRoom({ session }: { session: Session }) {
     return () => clearTimeout(t);
   }, [notice]);
 
-  if (loadError) {
-    return (
-      <main className="center">
-        <div className="card">
-          <h1>เข้าห้องไม่ได้</h1>
-          <p>{loadError}</p>
-          <Link href="/">กลับหน้าแรก</Link>
-        </div>
-      </main>
-    );
-  }
+  if (loadError) return <DeadEnd title="อุ๊ย เข้าห้องไม่ได้">{loadError}</DeadEnd>;
 
   const ended: string | null = roomClosed
     ? endText.room_closed
@@ -255,26 +248,42 @@ export default function ChatRoom({ session }: { session: Session }) {
       ? endText[socket.endReason]
       : null;
 
+  const roomName = room?.name ?? session.room_name ?? "…";
+  const online = members.filter((m) => m.online).length;
+  const status =
+    ended ?? (!ready ? "กำลังโหลด…" : socket.status === "open" ? `ออนไลน์ ${online} คน` : statusText[socket.status]);
+
   return (
     <div className="chat-layout">
       <header className="chat-header">
-        <Link href="/" className="back" aria-label="ห้องทั้งหมด">
-          ←
+        <Link href="/" className="icon-button back" aria-label="ห้องทั้งหมด">
+          <Icon name="back" />
         </Link>
+        <Avatar id={roomId} name={roomName} size="md" />
         <div className="title">
-          <h1>{room?.name ?? session.room_name ?? "…"}</h1>
-          <span className={`status ${ended ? "ended" : socket.status}`}>
-            {ended ?? (ready ? statusText[socket.status] : "กำลังโหลด…")}
-          </span>
+          <h1>{roomName}</h1>
+          <span className={`status ${ended ? "ended" : socket.status}`}>{status}</span>
         </div>
-        <button className="small side-toggle" onClick={() => setShowSide((v) => !v)} aria-expanded={showSide}>
-          {showSide ? "กลับไปแชท" : isHost ? "เชิญ / สมาชิก" : `สมาชิก (${members.filter((m) => m.online).length})`}
+        <button
+          className={showSide ? "icon-button side-toggle active" : "icon-button side-toggle"}
+          onClick={() => setShowSide((v) => !v)}
+          aria-expanded={showSide}
+          aria-label={showSide ? "กลับไปแชท" : isHost ? "ชวนเพื่อน / สมาชิก" : "สมาชิก"}
+        >
+          {showSide ? (
+            <Icon name="chat" />
+          ) : (
+            <>
+              <Icon name={isHost && !roomClosed ? "userPlus" : "users"} />
+              <span className="count">{online}</span>
+            </>
+          )}
         </button>
       </header>
 
       <div className={showSide ? "chat-body show-side" : "chat-body"}>
         <nav className="chat-rooms" aria-label="ห้องของฉัน">
-          <h2>ห้องของฉัน</h2>
+          <h2 className="section-title">ห้องของฉัน 💬</h2>
           <RoomList activeRoomId={roomId} />
         </nav>
         <main className="chat-main">
@@ -290,6 +299,7 @@ export default function ChatRoom({ session }: { session: Session }) {
             loadingOlder={loadingOlder}
             onLoadOlder={loadOlder}
             onRetry={retry}
+            onQuickSend={ended || !ready ? undefined : (text) => send(text, null)}
           />
           {notice && <div className="toast">{notice}</div>}
           {ended ? (

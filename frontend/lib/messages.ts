@@ -91,6 +91,17 @@ export function memberLabels(members: { id: string; display_name: string; joined
   return labels;
 }
 
+const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|️|‍|\s)+$/u;
+const graphemes = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter() : null;
+
+/** Short emoji-only messages ("🥹", "😂😂") are shown big, without a bubble. */
+export function isJumbo(body: string): boolean {
+  const text = body.replace(/\s/g, "");
+  if (!text || !EMOJI_ONLY.test(text)) return false;
+  const count = graphemes ? [...graphemes.segment(text)].length : [...text].length;
+  return count <= 3;
+}
+
 /** One-line preview for room lists. */
 export function previewText(m: ChatMessage): string {
   if (m.image) return m.body.trim() ? `📷 ${m.body}` : "📷 รูปภาพ";

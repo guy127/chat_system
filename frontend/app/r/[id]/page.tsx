@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { use, useEffect, useState } from "react";
 
 import ChatRoom from "@/components/ChatRoom";
+import DeadEnd from "@/components/DeadEnd";
+import Mascot from "@/components/Mascot";
 import { freshSession, loadSession } from "@/lib/session";
 import type { Session } from "@/types/chat";
 
@@ -30,14 +31,17 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   // key: switching rooms from the sidebar remounts the chat with fresh state
   if (state.kind === "ready") return <ChatRoom key={state.session.room_id} session={state.session} />;
-  if (state.kind === "loading") return <main className="center muted">กำลังโหลด…</main>;
+  if (state.kind === "loading") {
+    return (
+      <main className="center loading">
+        <Mascot size={64} className="bounce" />
+        <span className="muted">กำลังโหลด…</span>
+      </main>
+    );
+  }
   return (
-    <main className="center">
-      <div className="card">
-        <h1>{state.kind === "expired" ? "สิทธิ์เข้าห้องหมดอายุ" : "ยังไม่ได้เข้าห้องนี้"}</h1>
-        <p>ขอลิงก์เชิญ (หรือ QR) จากเจ้าของห้องเพื่อเข้าร่วม</p>
-        <Link href="/">กลับหน้าแรก</Link>
-      </div>
-    </main>
+    <DeadEnd title={state.kind === "expired" ? "สิทธิ์เข้าห้องหมดอายุแล้ว" : "ยังไม่ได้เข้าห้องนี้นะ"}>
+      ขอลิงก์เชิญ (หรือ QR) ใหม่จากเจ้าของห้อง แล้วกลับมาคุยกันต่อ
+    </DeadEnd>
   );
 }
