@@ -7,8 +7,8 @@
 - ส่งข้อความและ **รูปภาพไม่เกิน 10 MB** (JPEG, PNG, GIF; WebP/HEIC ถูกแปลงเป็น JPEG ในเครื่องก่อนส่ง)
 - Host เตะ/แบนสมาชิก ยกเลิกลิงก์เชิญ และปิดห้องได้
 
-- `server/` — Go (Gin + coder/websocket + PostgreSQL)
-- `web/` — Next.js 16 (App Router, TypeScript strict)
+- `backend/` — Go (Gin + coder/websocket + PostgreSQL)
+- `frontend/` — Next.js 16 (App Router, TypeScript strict)
 - `deploy/nginx.conf` — รวมเว็บ, `/api` และ `/ws` ไว้ใต้ origin เดียว
 
 ## เริ่มใช้งาน (Docker Compose)
@@ -43,26 +43,26 @@ Production ต้องมี TLS ด้านหน้า Nginx เพื่อ
 docker run -d --name smalltalk-db -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=smalltalk -p 5432:5432 postgres:17-alpine
 
 # API (migration รันอัตโนมัติตอนเริ่ม)
-cd server
+cd backend
 DATABASE_URL='postgres://postgres:dev@localhost:5432/smalltalk?sslmode=disable' \
 JWT_SECRET='dev-secret-at-least-32-characters-long' \
 ALLOWED_ORIGINS='localhost:3000' \
 go run ./cmd/server
 
 # Web (proxy /api ไปที่ :8080, WebSocket ต่อ ws://localhost:8080/ws)
-cd web && npm install && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 ## ทดสอบ
 
 ```bash
-cd server
+cd backend
 go test ./...                       # unit tests
 TEST_DATABASE_URL='postgres://postgres:dev@localhost:5432/smalltalk_test?sslmode=disable' \
   go test ./...                     # + integration/WebSocket tests กับ Postgres จริง
 golangci-lint run ./...
 
-cd web
+cd frontend
 npm run lint && npm run format:check && npx tsc --noEmit && npm run build
 ```
 

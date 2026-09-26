@@ -4,10 +4,10 @@
 .vscode/
 
 # Go
-/server/bin/
+/backend/bin/
 *.test
 coverage.out
 
 # Local env
 .env
-/server/data/
+/backend/data/

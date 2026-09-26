@@ -4,7 +4,7 @@ info:
   version: 0.2.0
   summary: Room chat joined by invite link or QR. No app install, no sign-up.
   description: |
-    REST API and WebSocket contract of the smalltalk server (`server/`).
+    REST API and WebSocket contract of the smalltalk server (`backend/`).
 
     **Conventions**
     - JSON fields are `snake_case`; times are RFC 3339 in UTC, e.g. `2026-09-26T06:00:00Z`.

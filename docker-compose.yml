@@ -14,7 +14,7 @@ services:
       retries: 30
 
   api:
-    build: ./server
+    build: ./backend
     environment:
       DATABASE_URL: postgres://smalltalk:${POSTGRES_PASSWORD:-smalltalk}@db:5432/smalltalk?sslmode=disable
       # Set a real secret in .env for anything beyond local testing.
@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    build: ./frontend
     depends_on:
       - api
     restart: unless-stopped
