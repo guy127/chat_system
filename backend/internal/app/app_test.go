@@ -59,13 +59,27 @@ type testAPI struct {
 	srv *httptest.Server
 }
 
-func newAPI(t *testing.T) *testAPI {
+const (
+	testServiceKey = "test-service-key-0123456789abcdef"
+	testOrigin     = "http://claims.test"
+)
+
+func newAPI(t *testing.T) *testAPI { return newAPIWith(t, nil) }
+
+// newAPIWith builds the API with test defaults; edit may change the config first.
+func newAPIWith(t *testing.T, edit func(*config.Config)) *testAPI {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := config.Config{
-		JWTSecret: []byte(strings.Repeat("s", 32)),
-		JWTTTL:    time.Hour,
-		MediaDir:  t.TempDir(),
+		JWTSecret:     []byte(strings.Repeat("s", 32)),
+		JWTTTL:        time.Hour,
+		MediaDir:      t.TempDir(),
+		ServiceAPIKey: testServiceKey,
+		ServiceJWTTTL: 15 * time.Minute,
+		CORSOrigins:   []string{testOrigin},
+	}
+	if edit != nil {
+		edit(&cfg)
 	}
 	r, err := NewRouter(ctx, cfg, pool, chat.NewMemoryBroker())
 	if err != nil {
@@ -657,5 +671,29 @@ func TestRoomSummaries(t *testing.T) {
 	}
 	if r[2].State != "kicked" || r[3].State != "unauthorized" || r[4].State != "unauthorized" {
 		t.Fatalf("states = %q %q %q", r[2].State, r[3].State, r[4].State)
+	}
+}
+
+func TestCORSPreflight(t *testing.T) {
+	a := newAPI(t)
+	host := a.createRoom()
+	preflight := func(origin string) *http.Response {
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodOptions,
+			a.srv.URL+"/rooms/"+host.RoomID+"/messages", nil)
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", "GET")
+		req.Header.Set("Access-Control-Request-Headers", "authorization")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		return res
+	}
+	if res := preflight(testOrigin); res.StatusCode != 204 || res.Header.Get("Access-Control-Allow-Origin") != testOrigin {
+		t.Fatalf("allowed preflight = %d %q", res.StatusCode, res.Header.Get("Access-Control-Allow-Origin"))
+	}
+	if res := preflight("http://evil.test"); res.StatusCode != 403 || res.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("rejected preflight = %d %q", res.StatusCode, res.Header.Get("Access-Control-Allow-Origin"))
 	}
 }

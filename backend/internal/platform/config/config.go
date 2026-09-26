@@ -23,6 +23,13 @@ type Config struct {
 	TrustedProxies []string
 	// MediaDir is where uploaded images are stored.
 	MediaDir string
+	// ServiceAPIKey lets trusted backends call /service/v1. Empty turns that API off.
+	ServiceAPIKey string
+	// ServiceJWTTTL is the lifetime of JWTs issued through /service/v1.
+	ServiceJWTTTL time.Duration
+	// CORSOrigins are full origins (https://claims.example.com) whose pages may
+	// call the REST API from the browser.
+	CORSOrigins []string
 }
 
 func Load() (Config, error) {
@@ -35,6 +42,8 @@ func Load() (Config, error) {
 		AllowedOrigins: list(os.Getenv("ALLOWED_ORIGINS")),
 		TrustedProxies: list(env("TRUSTED_PROXIES", "127.0.0.1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16")),
 		MediaDir:       env("MEDIA_DIR", "./data/images"),
+		ServiceAPIKey:  strings.TrimSpace(os.Getenv("SERVICE_API_KEY")),
+		CORSOrigins:    list(os.Getenv("CORS_ORIGINS")),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
@@ -42,6 +51,14 @@ func Load() (Config, error) {
 	if len(cfg.JWTSecret) < 32 {
 		return Config{}, errors.New("JWT_SECRET must be at least 32 bytes")
 	}
+	if cfg.ServiceAPIKey != "" && len(cfg.ServiceAPIKey) < 32 {
+		return Config{}, errors.New("SERVICE_API_KEY must be at least 32 characters")
+	}
+	ttl, err := time.ParseDuration(env("SERVICE_JWT_TTL", "15m"))
+	if err != nil || ttl <= 0 {
+		return Config{}, errors.New("SERVICE_JWT_TTL must be a positive duration such as 15m")
+	}
+	cfg.ServiceJWTTTL = ttl
 	return cfg, nil
 }
 

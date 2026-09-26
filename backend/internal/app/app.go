@@ -47,7 +47,7 @@ func NewRouter(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, broke
 	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return nil, err
 	}
-	r.Use(gin.Recovery(), httpx.RequestLog())
+	r.Use(gin.Recovery(), httpx.RequestLog(), httpx.CORS(cfg.CORSOrigins))
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	roomHandler.Register(r)
