@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
-	"qrchat/internal/auth"
-	"qrchat/internal/room"
+	"smalltalk/internal/apperr"
+	"smalltalk/internal/auth"
+	"smalltalk/internal/room"
 )
 
 type Service struct {

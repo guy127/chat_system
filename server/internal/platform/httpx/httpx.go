@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
+	"smalltalk/internal/apperr"
 )
 
 var statusByCode = map[string]int{

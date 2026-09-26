@@ -9,7 +9,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
+	"smalltalk/internal/apperr"
 )
 
 // Close codes in the 4000 range tell the client not to reconnect.

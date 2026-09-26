@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"qrchat/internal/app"
-	"qrchat/internal/chat"
-	"qrchat/internal/platform/config"
-	"qrchat/internal/platform/db"
+	"smalltalk/internal/app"
+	"smalltalk/internal/chat"
+	"smalltalk/internal/platform/config"
+	"smalltalk/internal/platform/db"
 )
 
 func main() {

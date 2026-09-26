@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"qrchat/internal/apperr"
+	"smalltalk/internal/apperr"
 )
 
 func TestValidateBody(t *testing.T) {

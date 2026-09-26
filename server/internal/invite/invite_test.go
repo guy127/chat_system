@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"qrchat/internal/apperr"
+	"smalltalk/internal/apperr"
 )
 
 func TestCheck(t *testing.T) {

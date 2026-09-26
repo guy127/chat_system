@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"qrchat/internal/apperr"
-	"qrchat/internal/room"
+	"smalltalk/internal/apperr"
+	"smalltalk/internal/room"
 )
 
 type Repository struct {

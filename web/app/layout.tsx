@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "QR Chat",
+  title: "smalltalk",
   description: "ห้องแชทที่เข้าได้ด้วยการสแกน QR ไม่ต้องลงแอป ไม่ต้องสมัครสมาชิก",
 };
 

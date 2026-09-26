@@ -1,7 +1,7 @@
 package app
 
 // Integration tests against a real PostgreSQL. They run when TEST_DATABASE_URL
-// is set, e.g. postgres://postgres:test@localhost:55432/qrchat_test?sslmode=disable
+// is set, e.g. postgres://postgres:test@localhost:55432/smalltalk_test?sslmode=disable
 
 import (
 	"bytes"
@@ -21,9 +21,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"qrchat/internal/chat"
-	"qrchat/internal/platform/config"
-	"qrchat/internal/platform/db"
+	"smalltalk/internal/chat"
+	"smalltalk/internal/platform/config"
+	"smalltalk/internal/platform/db"
 )
 
 var pool *pgxpool.Pool

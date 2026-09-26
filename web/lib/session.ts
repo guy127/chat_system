@@ -3,9 +3,9 @@ import type { CreatedInvite, Session } from "@/types/chat";
 // Sessions live in localStorage so a refresh or a closed tab can come back.
 // Every access is guarded: storage can be unavailable (private mode, blocked).
 
-const sessionKey = (roomId: string) => `qrchat:session:${roomId}`;
-const inviteKey = (roomId: string) => `qrchat:invite:${roomId}`;
-const NAME_KEY = "qrchat:display_name";
+const sessionKey = (roomId: string) => `smalltalk:session:${roomId}`;
+const inviteKey = (roomId: string) => `smalltalk:invite:${roomId}`;
+const NAME_KEY = "smalltalk:display_name";
 
 function read<T>(key: string): T | null {
   try {
@@ -38,7 +38,7 @@ export function hostedRooms(): Session[] {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key?.startsWith("qrchat:session:")) continue;
+      if (!key?.startsWith("smalltalk:session:")) continue;
       const s = read<Session>(key);
       if (s?.owner_token) out.push(s);
     }

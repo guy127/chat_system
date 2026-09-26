@@ -10,12 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/time/rate"
 
-	"qrchat/internal/auth"
-	"qrchat/internal/chat"
-	"qrchat/internal/invite"
-	"qrchat/internal/platform/config"
-	"qrchat/internal/platform/httpx"
-	"qrchat/internal/room"
+	"smalltalk/internal/auth"
+	"smalltalk/internal/chat"
+	"smalltalk/internal/invite"
+	"smalltalk/internal/platform/config"
+	"smalltalk/internal/platform/httpx"
+	"smalltalk/internal/room"
 )
 
 // NewRouter builds the API. Background work (rate-limiter eviction) stops when ctx is done.

@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
-	"qrchat/internal/auth"
+	"smalltalk/internal/apperr"
+	"smalltalk/internal/auth"
 )
 
 // Notifier pushes moderation events to live connections (implemented by chat.Hub).

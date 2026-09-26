@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
+	"smalltalk/internal/apperr"
 )
 
 const DefaultTTL = 24 * time.Hour

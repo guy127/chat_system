@@ -8,9 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
-	"qrchat/internal/auth"
-	"qrchat/internal/platform/httpx"
+	"smalltalk/internal/apperr"
+	"smalltalk/internal/auth"
+	"smalltalk/internal/platform/httpx"
 )
 
 type Handler struct {

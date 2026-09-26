@@ -46,7 +46,7 @@ export default function HomePage() {
   return (
     <main className="center">
       <form className="card" onSubmit={create}>
-        <h1>QR Chat</h1>
+        <h1>smalltalk</h1>
         <p className="muted">สร้างห้อง แล้วให้คนสแกน QR เข้ามาคุยได้ทันที ไม่ต้องลงแอป ไม่ต้องสมัคร</p>
         <label>
           ชื่อห้อง

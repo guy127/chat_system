@@ -1,4 +1,4 @@
-module qrchat
+module smalltalk
 
 go 1.26.5
 

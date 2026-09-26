@@ -1,4 +1,4 @@
-# QR Chat
+# smalltalk
 
 ระบบแชทแบบห้อง: Host สร้างห้องแล้วแชร์ QR ให้คนสแกนเข้ามาคุยได้ทันทีผ่านเว็บ ไม่ต้องลงแอปและไม่ต้องสมัครสมาชิก
 
@@ -22,7 +22,7 @@ docker compose up -d --build
 | ตัวแปร | ค่าเริ่มต้น | ความหมาย |
 | --- | --- | --- |
 | `JWT_SECRET` | ค่า dev (ห้ามใช้จริง) | อย่างน้อย 32 ตัวอักษร |
-| `POSTGRES_PASSWORD` | `qrchat` | รหัสผ่านฐานข้อมูล |
+| `POSTGRES_PASSWORD` | `smalltalk` | รหัสผ่านฐานข้อมูล |
 | `APP_BASE_URL` | ว่าง | prefix ของลิงก์ใน QR เช่น `https://chat.example.com` |
 | `PORT` | `8000` | port ของ Nginx |
 
@@ -32,11 +32,11 @@ Production ต้องมี TLS ด้านหน้า Nginx เพื่อ
 
 ```bash
 # Postgres ชั่วคราว
-docker run -d --name qrchat-db -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=qrchat -p 5432:5432 postgres:17-alpine
+docker run -d --name smalltalk-db -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=smalltalk -p 5432:5432 postgres:17-alpine
 
 # API (migration รันอัตโนมัติตอนเริ่ม)
 cd server
-DATABASE_URL='postgres://postgres:dev@localhost:5432/qrchat?sslmode=disable' \
+DATABASE_URL='postgres://postgres:dev@localhost:5432/smalltalk?sslmode=disable' \
 JWT_SECRET='dev-secret-at-least-32-characters-long' \
 ALLOWED_ORIGINS='localhost:3000' \
 go run ./cmd/server
@@ -50,7 +50,7 @@ cd web && npm install && npm run dev
 ```bash
 cd server
 go test ./...                       # unit tests
-TEST_DATABASE_URL='postgres://postgres:dev@localhost:5432/qrchat_test?sslmode=disable' \
+TEST_DATABASE_URL='postgres://postgres:dev@localhost:5432/smalltalk_test?sslmode=disable' \
   go test ./...                     # + integration/WebSocket tests กับ Postgres จริง
 golangci-lint run ./...
 

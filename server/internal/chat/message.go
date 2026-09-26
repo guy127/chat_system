@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"qrchat/internal/apperr"
+	"smalltalk/internal/apperr"
 )
 
 const MaxBodyLen = 2000

@@ -2,13 +2,13 @@ services:
   db:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: qrchat
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qrchat}
-      POSTGRES_DB: qrchat
+      POSTGRES_USER: smalltalk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smalltalk}
+      POSTGRES_DB: smalltalk
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U qrchat -d qrchat"]
+      test: ["CMD-SHELL", "pg_isready -U smalltalk -d smalltalk"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -16,7 +16,7 @@ services:
   api:
     build: ./server
     environment:
-      DATABASE_URL: postgres://qrchat:${POSTGRES_PASSWORD:-qrchat}@db:5432/qrchat?sslmode=disable
+      DATABASE_URL: postgres://smalltalk:${POSTGRES_PASSWORD:-smalltalk}@db:5432/smalltalk?sslmode=disable
       # Set a real secret in .env for anything beyond local testing.
       JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-0123456789}
       # Empty: invite links use the origin the host opened the app on.

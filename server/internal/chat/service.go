@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
 
-	"qrchat/internal/apperr"
-	"qrchat/internal/platform/httpx"
-	"qrchat/internal/room"
+	"smalltalk/internal/apperr"
+	"smalltalk/internal/platform/httpx"
+	"smalltalk/internal/room"
 )
 
 type Service struct {

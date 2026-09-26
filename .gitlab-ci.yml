@@ -22,8 +22,8 @@ go:test:
   variables:
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: test
-    POSTGRES_DB: qrchat_test
-    TEST_DATABASE_URL: postgres://postgres:test@postgres:5432/qrchat_test?sslmode=disable
+    POSTGRES_DB: smalltalk_test
+    TEST_DATABASE_URL: postgres://postgres:test@postgres:5432/smalltalk_test?sslmode=disable
   script:
     - cd server
     - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
