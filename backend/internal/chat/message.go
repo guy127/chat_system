@@ -18,6 +18,7 @@ type Message struct {
 	RoomID      uuid.UUID `json:"-"`
 	MemberID    uuid.UUID `json:"member_id"`
 	DisplayName string    `json:"display_name"`
+	Label       string    `json:"label"` // sender's role in service rooms, e.g. "เจ้าหน้าที่ตรวจสอบ"; "" otherwise
 	ClientMsgID uuid.UUID `json:"client_msg_id"`
 	Body        string    `json:"body"`
 	Image       *ImageRef `json:"image"`

@@ -70,6 +70,7 @@ func (s *Service) Send(ctx context.Context, roomID, memberID, clientMsgID uuid.U
 		RoomID:      roomID,
 		MemberID:    memberID,
 		DisplayName: member.DisplayName,
+		Label:       member.Label,
 		ClientMsgID: clientMsgID,
 		Body:        body,
 		Image:       image,

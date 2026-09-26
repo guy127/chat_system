@@ -116,9 +116,61 @@ func (s *Service) CanPost(ctx context.Context, roomID, memberID uuid.UUID) (Memb
 	return m, nil
 }
 
+const (
+	// MaxServiceNameLen is longer than the 32 of invite rooms because names
+	// come from another system's user records (full Thai names), not a text box.
+	MaxServiceNameLen = 64
+	MaxLabelLen       = 40
+)
+
+// EnsureByRef returns the service room for ref, creating it on first use.
+// Nobody holds its owner token, so a service room never has an owner session.
+func (s *Service) EnsureByRef(ctx context.Context, ref, name string) (Room, error) {
+	name, err := CleanName(name, 80, "name")
+	if err != nil {
+		return Room{}, err
+	}
+	rm := Room{ID: uuid.New(), Name: name, OwnerTokenHash: auth.HashToken(auth.NewToken())}
+	return s.repo.EnsureByRef(ctx, rm, ref)
+}
+
+func (s *Service) GetByRef(ctx context.Context, ref string) (Room, error) {
+	return s.repo.GetByRef(ctx, ref)
+}
+
+// JoinExternal makes the external user a member of a service room, keeping
+// their member id across calls. Removed members stay removed.
+func (s *Service) JoinExternal(ctx context.Context, roomID uuid.UUID, externalUserID, displayName, label string) (Member, error) {
+	name, err := CleanName(displayName, MaxServiceNameLen, "display_name")
+	if err != nil {
+		return Member{}, err
+	}
+	label = strings.Join(strings.Fields(label), " ")
+	if utf8.RuneCountInString(label) > MaxLabelLen {
+		return Member{}, apperr.Invalid(fmt.Sprintf("label must be at most %d characters", MaxLabelLen))
+	}
+	m, err := s.repo.UpsertExternalMember(ctx, Member{
+		ID: uuid.New(), RoomID: roomID, DisplayName: name, Role: RoleMember,
+		ExternalUserID: &externalUserID, Label: label,
+	})
+	if err != nil {
+		return Member{}, fmt.Errorf("join external: %w", err)
+	}
+	if m.KickedAt != nil || m.BannedAt != nil {
+		return Member{}, apperr.MemberRemoved
+	}
+	return m, nil
+}
+
+// Member loads a member whether or not they are still active.
+func (s *Service) Member(ctx context.Context, roomID, memberID uuid.UUID) (Member, error) {
+	return s.repo.GetMember(ctx, roomID, memberID)
+}
+
 type MemberView struct {
 	ID          uuid.UUID `json:"id"`
 	DisplayName string    `json:"display_name"`
+	Label       string    `json:"label"`
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	Online      bool      `json:"online"`
@@ -133,7 +185,7 @@ func (s *Service) Members(ctx context.Context, roomID uuid.UUID) ([]MemberView, 
 	out := make([]MemberView, 0, len(members))
 	for _, m := range members {
 		out = append(out, MemberView{
-			ID: m.ID, DisplayName: m.DisplayName, Role: m.Role,
+			ID: m.ID, DisplayName: m.DisplayName, Label: m.Label, Role: m.Role,
 			JoinedAt: m.JoinedAt.UTC(), Online: online[m.ID],
 		})
 	}

@@ -19,7 +19,7 @@ type Repository struct {
 
 func NewRepository(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
-const messageSelect = `SELECT m.id, m.room_id, m.member_id, rm.display_name, m.client_msg_id, m.body, m.created_at,
+const messageSelect = `SELECT m.id, m.room_id, m.member_id, rm.display_name, rm.label, m.client_msg_id, m.body, m.created_at,
 		i.id, i.content_type, i.width, i.height
 	FROM messages m
 	JOIN room_members rm ON rm.id = m.member_id
@@ -30,7 +30,7 @@ func scanMessage(row pgx.Row) (Message, error) {
 	var imgID *uuid.UUID
 	var imgType *string
 	var imgW, imgH *int
-	err := row.Scan(&m.ID, &m.RoomID, &m.MemberID, &m.DisplayName, &m.ClientMsgID, &m.Body, &m.CreatedAt,
+	err := row.Scan(&m.ID, &m.RoomID, &m.MemberID, &m.DisplayName, &m.Label, &m.ClientMsgID, &m.Body, &m.CreatedAt,
 		&imgID, &imgType, &imgW, &imgH)
 	m.CreatedAt = m.CreatedAt.UTC()
 	if imgID != nil {

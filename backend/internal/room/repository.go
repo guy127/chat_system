@@ -27,17 +27,20 @@ type Room struct {
 	Name           string
 	OwnerTokenHash string
 	Status         string
+	ExternalRef    *string // set for rooms created through /service/v1
 	CreatedAt      time.Time
 }
 
 type Member struct {
-	ID          uuid.UUID
-	RoomID      uuid.UUID
-	DisplayName string
-	Role        string
-	JoinedAt    time.Time
-	KickedAt    *time.Time
-	BannedAt    *time.Time
+	ID             uuid.UUID
+	RoomID         uuid.UUID
+	DisplayName    string
+	Role           string
+	ExternalUserID *string
+	Label          string
+	JoinedAt       time.Time
+	KickedAt       *time.Time
+	BannedAt       *time.Time
 }
 
 type Repository struct {
@@ -77,11 +80,11 @@ func InsertMember(ctx context.Context, tx pgx.Tx, m Member) error {
 	return nil
 }
 
-func (r *Repository) Get(ctx context.Context, id uuid.UUID) (Room, error) {
+const roomCols = `id, name, owner_token_hash, status, external_ref, created_at`
+
+func scanRoom(row pgx.Row) (Room, error) {
 	var rm Room
-	err := r.db.QueryRow(ctx,
-		`SELECT id, name, owner_token_hash, status, created_at FROM rooms WHERE id = $1`, id).
-		Scan(&rm.ID, &rm.Name, &rm.OwnerTokenHash, &rm.Status, &rm.CreatedAt)
+	err := row.Scan(&rm.ID, &rm.Name, &rm.OwnerTokenHash, &rm.Status, &rm.ExternalRef, &rm.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Room{}, apperr.NotFound
 	}
@@ -91,6 +94,26 @@ func (r *Repository) Get(ctx context.Context, id uuid.UUID) (Room, error) {
 	return rm, nil
 }
 
+func (r *Repository) Get(ctx context.Context, id uuid.UUID) (Room, error) {
+	return scanRoom(r.db.QueryRow(ctx, `SELECT `+roomCols+` FROM rooms WHERE id = $1`, id))
+}
+
+func (r *Repository) GetByRef(ctx context.Context, ref string) (Room, error) {
+	return scanRoom(r.db.QueryRow(ctx, `SELECT `+roomCols+` FROM rooms WHERE external_ref = $1`, ref))
+}
+
+// EnsureByRef creates the room for ref unless it exists, then returns it.
+// Concurrent callers with the same ref all get the same room.
+func (r *Repository) EnsureByRef(ctx context.Context, rm Room, ref string) (Room, error) {
+	if _, err := r.db.Exec(ctx,
+		`INSERT INTO rooms (id, name, owner_token_hash, status, external_ref) VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (external_ref) DO NOTHING`,
+		rm.ID, rm.Name, rm.OwnerTokenHash, StatusActive, ref); err != nil {
+		return Room{}, fmt.Errorf("ensure room: %w", err)
+	}
+	return r.GetByRef(ctx, ref)
+}
+
 func (r *Repository) Close(ctx context.Context, id uuid.UUID) error {
 	if _, err := r.db.Exec(ctx, `UPDATE rooms SET status = $2 WHERE id = $1`, id, StatusClosed); err != nil {
 		return fmt.Errorf("close room: %w", err)
@@ -98,12 +121,30 @@ func (r *Repository) Close(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-const memberCols = `id, room_id, display_name, role, joined_at, kicked_at, banned_at`
+const memberCols = `id, room_id, display_name, role, joined_at, kicked_at, banned_at, external_user_id, label`
 
 func scanMember(row pgx.Row) (Member, error) {
 	var m Member
-	err := row.Scan(&m.ID, &m.RoomID, &m.DisplayName, &m.Role, &m.JoinedAt, &m.KickedAt, &m.BannedAt)
+	err := row.Scan(&m.ID, &m.RoomID, &m.DisplayName, &m.Role, &m.JoinedAt, &m.KickedAt, &m.BannedAt,
+		&m.ExternalUserID, &m.Label)
 	return m, err
+}
+
+// UpsertExternalMember adds an external user to the room, or refreshes the
+// name and label of the member they already are. It never clears kicked_at or
+// banned_at, so the caller must check the returned member.
+func (r *Repository) UpsertExternalMember(ctx context.Context, m Member) (Member, error) {
+	got, err := scanMember(r.db.QueryRow(ctx,
+		`INSERT INTO room_members (id, room_id, display_name, role, external_user_id, label)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (room_id, external_user_id) DO UPDATE
+		   SET display_name = EXCLUDED.display_name, label = EXCLUDED.label
+		 RETURNING `+memberCols,
+		m.ID, m.RoomID, m.DisplayName, m.Role, m.ExternalUserID, m.Label))
+	if err != nil {
+		return Member{}, fmt.Errorf("upsert member: %w", err)
+	}
+	return got, nil
 }
 
 func (r *Repository) GetMember(ctx context.Context, roomID, memberID uuid.UUID) (Member, error) {

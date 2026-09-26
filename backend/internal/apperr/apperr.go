@@ -24,6 +24,7 @@ var (
 	RateLimited     = &Error{"rate_limited", "too many requests"}
 	Banned          = &Error{"banned", "you are banned from this room"}
 	Kicked          = &Error{"kicked", "you were removed from this room"}
+	MemberRemoved   = &Error{"member_removed", "this user was removed from the room"}
 	MessageTooLong  = &Error{"message_too_long", "message exceeds 2000 characters"}
 	ImageTooLarge   = &Error{"image_too_large", "image exceeds 10 MB"}
 	ImageInvalid    = &Error{"image_unsupported", "only JPEG, PNG and GIF images are supported"}

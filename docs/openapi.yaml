@@ -697,6 +697,7 @@ components:
         - rate_limited
         - banned
         - kicked
+        - member_removed
         - message_too_long
         - image_too_large
         - image_unsupported
@@ -861,13 +862,17 @@ components:
 
     Member:
       type: object
-      required: [id, display_name, role, joined_at, online]
+      required: [id, display_name, label, role, joined_at, online]
       properties:
         id:
           type: string
           format: uuid
         display_name:
           type: string
+        label:
+          type: string
+          maxLength: 40
+          description: Role shown beside the name in service rooms (e.g. `เจ้าหน้าที่ตรวจสอบ`); empty in normal rooms.
         role:
           $ref: "#/components/schemas/Role"
         joined_at:
@@ -903,7 +908,7 @@ components:
 
     Message:
       type: object
-      required: [id, member_id, display_name, client_msg_id, body, image, created_at]
+      required: [id, member_id, display_name, label, client_msg_id, body, image, created_at]
       properties:
         id:
           $ref: "#/components/schemas/MessageId"
@@ -913,6 +918,9 @@ components:
         display_name:
           type: string
           description: Name at send time; clients may relabel duplicates using the member list.
+        label:
+          type: string
+          description: Sender's role label; see `Member.label`.
         client_msg_id:
           type: string
           format: uuid
