@@ -97,6 +97,9 @@ nginx ไม่ส่งต่อ `/service` จึงเรียกได้�
 
 ## ฝั่งระบบเบิก (fork ของ pea-medical-claims)
 
+Fork: [guy127/pea-medical-claims](https://github.com/guy127/pea-medical-claims) (แยกจาก upstream ที่ `9df2902`)
+ทำงานใน branch `feat/smalltalk-chat` แล้วเปิด PR เข้า `main` ของ fork
+
 ### Backend — `chat.go` ใหม่
 
 Config: `SMALLTALK_INTERNAL_URL` (เช่น `http://smalltalk-backend:8080`), `SMALLTALK_PUBLIC_URL` (ที่ browser ใช้), `SMALLTALK_SERVICE_KEY`
