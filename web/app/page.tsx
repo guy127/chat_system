@@ -1,16 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import RoomList from "@/components/RoomList";
 import { useStored } from "@/hooks/useStored";
 import { api } from "@/lib/api";
 import { errorText } from "@/lib/errors";
-import { hostedRooms, loadDisplayName, saveDisplayName, saveInvite, saveSession } from "@/lib/session";
+import { loadDisplayName, saveDisplayName, saveInvite, saveSession, tokenFromLink } from "@/lib/session";
 import type { CreatedInvite, Session } from "@/types/chat";
-
-const noRooms: Session[] = [];
 
 export default function HomePage() {
   const router = useRouter();
@@ -20,7 +18,8 @@ export default function HomePage() {
   const hostName = typedName ?? savedName;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const rooms = useStored(hostedRooms, noRooms);
+  const [link, setLink] = useState("");
+  const [linkError, setLinkError] = useState("");
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -33,7 +32,7 @@ export default function HomePage() {
       });
       saveDisplayName(hostName.trim());
       saveSession({ ...created, room_name: roomName.trim() });
-      // Issue the first QR right away (24 h, unlimited) so the host can share immediately.
+      // Issue the first invite link right away (24 h, unlimited) so the host can share immediately.
       const inv = await api<CreatedInvite>(`/rooms/${created.room_id}/invites`, { method: "POST", jwt: created.jwt });
       saveInvite(created.room_id, inv);
       router.push(`/r/${created.room_id}`);
@@ -43,11 +42,50 @@ export default function HomePage() {
     }
   };
 
+  const openLink = (e: FormEvent) => {
+    e.preventDefault();
+    const token = tokenFromLink(link);
+    if (!token) {
+      setLinkError("ลิงก์ไม่ถูกต้อง ตัวอย่าง: https://…/j/abc123…");
+      return;
+    }
+    router.push(`/j/${token}`);
+  };
+
   return (
-    <main className="center">
-      <form className="card" onSubmit={create}>
+    <main className="home">
+      <header className="home-header">
         <h1>smalltalk</h1>
-        <p className="muted">สร้างห้อง แล้วให้คนสแกน QR เข้ามาคุยได้ทันที ไม่ต้องลงแอป ไม่ต้องสมัคร</p>
+        <p className="muted">ห้องแชทที่ชวนเพื่อนเข้าได้ด้วยลิงก์หรือ QR ไม่ต้องลงแอป ไม่ต้องสมัคร</p>
+      </header>
+
+      <section className="card">
+        <h2>ห้องของฉัน</h2>
+        <RoomList />
+      </section>
+
+      <form className="card" onSubmit={openLink}>
+        <h2>เข้าห้องด้วยลิงก์เชิญ</h2>
+        <div className="inline-form">
+          <input
+            value={link}
+            onChange={(e) => {
+              setLink(e.target.value);
+              setLinkError("");
+            }}
+            placeholder="วางลิงก์เชิญที่ได้รับมา"
+            aria-label="ลิงก์เชิญ"
+            inputMode="url"
+          />
+          <button className="primary" disabled={!link.trim()}>
+            เปิด
+          </button>
+        </div>
+        {linkError && <p className="error">{linkError}</p>}
+      </form>
+
+      <form className="card" onSubmit={create}>
+        <h2>สร้างห้องใหม่</h2>
         <label>
           ชื่อห้อง
           <input
@@ -72,20 +110,6 @@ export default function HomePage() {
           {busy ? "กำลังสร้าง…" : "สร้างห้อง"}
         </button>
         {error && <p className="error">{error}</p>}
-
-        {rooms.length > 0 && (
-          <>
-            <hr />
-            <h2>ห้องที่คุณเป็น Host</h2>
-            <ul className="room-links">
-              {rooms.map((r) => (
-                <li key={r.room_id}>
-                  <Link href={`/r/${r.room_id}`}>{r.room_name ?? r.room_id}</Link>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
       </form>
     </main>
   );

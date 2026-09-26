@@ -16,6 +16,8 @@ export type ErrorCode =
   | "banned"
   | "kicked"
   | "message_too_long"
+  | "image_too_large"
+  | "image_unsupported"
   | "internal";
 
 export interface Session {
@@ -44,13 +46,36 @@ export interface Member {
   online: boolean;
 }
 
+export interface ImageRef {
+  id: string;
+  content_type: string;
+  width: number;
+  height: number;
+}
+
 export interface ChatMessage {
   id: string; // ULID; sorts by time
   member_id: string;
   display_name: string;
   client_msg_id: string;
-  body: string;
+  body: string; // may be empty when image is set
+  image: ImageRef | null;
   created_at: string;
+}
+
+export interface UploadedImage extends ImageRef {
+  size_bytes: number;
+}
+
+export type RoomState = "active" | "kicked" | "banned" | "unauthorized" | "not_found";
+
+export interface RoomSummary {
+  room_id: string;
+  state: RoomState;
+  name?: string;
+  status?: "active" | "closed";
+  last_message: ChatMessage | null;
+  unread: number; // capped at 99
 }
 
 export interface MessagePage {
@@ -77,7 +102,7 @@ export interface InviteView {
 // ---- WebSocket frames ----
 
 export type ClientFrame =
-  | { type: "send"; client_msg_id: string; body: string }
+  | { type: "send"; client_msg_id: string; body: string; image_id?: string }
   | { type: "resume"; last_message_id: string }
   | { type: "ping" };
 
@@ -94,3 +119,4 @@ export type ServerFrame =
 export type EndReason = "kicked" | "banned" | "room_closed" | "unauthorized";
 
 export const MAX_BODY_LENGTH = 2000;
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;

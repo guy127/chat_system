@@ -5,12 +5,16 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import Composer from "@/components/Composer";
 import HostPanel from "@/components/HostPanel";
+import ImageViewer from "@/components/ImageViewer";
 import MemberList from "@/components/MemberList";
 import MessageList from "@/components/MessageList";
+import RoomList from "@/components/RoomList";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import { api, ApiError } from "@/lib/api";
 import { codeText, errorText } from "@/lib/errors";
+import { primeImageURL, uploadImage, type PreparedImage } from "@/lib/images";
 import { initialMessages, memberLabels, messagesReducer } from "@/lib/messages";
+import { saveLastRead } from "@/lib/session";
 import { uuid } from "@/lib/uuid";
 import type { EndReason, Member, MessagePage, Room, ServerFrame, Session } from "@/types/chat";
 
@@ -18,7 +22,7 @@ const endText: Record<EndReason, string> = {
   kicked: "คุณถูกเชิญออกจากห้องนี้",
   banned: "คุณถูกแบนจากห้องนี้",
   room_closed: "ห้องนี้ปิดแล้ว",
-  unauthorized: "สิทธิ์เข้าห้องหมดอายุ กรุณาสแกน QR ใหม่",
+  unauthorized: "สิทธิ์เข้าห้องหมดอายุ ขอลิงก์เชิญใหม่จากเจ้าของห้อง",
 };
 
 const statusText = {
@@ -41,11 +45,22 @@ export default function ChatRoom({ session }: { session: Session }) {
   const [loadError, setLoadError] = useState<string>("");
   const [showSide, setShowSide] = useState(false);
   const [notice, setNotice] = useState("");
+  const [viewing, setViewing] = useState<string | null>(null);
 
   const lastId = useRef<string | undefined>(undefined);
   useEffect(() => {
     lastId.current = msgs.confirmed.at(-1)?.id;
   }, [msgs.confirmed]);
+
+  // Everything on screen counts as read once the tab is visible (drives unread badges).
+  useEffect(() => {
+    const markRead = () => {
+      if (lastId.current && document.visibilityState === "visible") saveLastRead(roomId, lastId.current);
+    };
+    markRead();
+    document.addEventListener("visibilitychange", markRead);
+    return () => document.removeEventListener("visibilitychange", markRead);
+  }, [msgs.confirmed, roomId]);
 
   const fetchMembers = useCallback(
     () => api<{ members: Member[] }>(`/rooms/${roomId}/members`, { jwt: session.jwt }).then((r) => r.members),
@@ -108,6 +123,7 @@ export default function ChatRoom({ session }: { session: Session }) {
                 display_name: f.display_name,
                 client_msg_id: f.client_msg_id,
                 body: f.body,
+                image: f.image ?? null,
                 created_at: f.created_at,
               },
             ],
@@ -149,17 +165,36 @@ export default function ChatRoom({ session }: { session: Session }) {
 
   const labels = useMemo(() => memberLabels(members), [members]);
 
-  const send = (body: string) => {
+  // Images upload over HTTP first; the message then references the stored image.
+  const uploadThenSend = (id: string, body: string, image: { blob: Blob; previewURL: string }) => {
+    uploadImage(roomId, session.jwt, image.blob, (progress) =>
+      dispatch({ type: "progress", client_msg_id: id, progress }),
+    )
+      .then((img) => {
+        primeImageURL(img.id, image.previewURL);
+        dispatch({ type: "uploaded", client_msg_id: id, image_id: img.id });
+        socket.send(id, body, img.id);
+      })
+      .catch((e) => dispatch({ type: "failed", client_msg_id: id, error: errorText(e) }));
+  };
+
+  const send = (body: string, image: PreparedImage | null) => {
     const id = uuid();
-    dispatch({ type: "queued", client_msg_id: id, body });
-    socket.send(id, body);
+    if (!image) {
+      dispatch({ type: "queued", client_msg_id: id, body });
+      socket.send(id, body);
+      return;
+    }
+    dispatch({ type: "queued", client_msg_id: id, body, image: { ...image, progress: 0 } });
+    uploadThenSend(id, body, image);
   };
 
   const retry = (clientMsgId: string) => {
     const p = msgs.pending.find((x) => x.client_msg_id === clientMsgId);
     if (!p) return;
     dispatch({ type: "retry", client_msg_id: clientMsgId });
-    socket.send(clientMsgId, p.body);
+    if (p.image && !p.image.uploadedId) uploadThenSend(clientMsgId, p.body, p.image);
+    else socket.send(clientMsgId, p.body, p.image?.uploadedId);
   };
 
   const loadOlder = async () => {
@@ -223,6 +258,9 @@ export default function ChatRoom({ session }: { session: Session }) {
   return (
     <div className="chat-layout">
       <header className="chat-header">
+        <Link href="/" className="back" aria-label="ห้องทั้งหมด">
+          ←
+        </Link>
         <div className="title">
           <h1>{room?.name ?? session.room_name ?? "…"}</h1>
           <span className={`status ${ended ? "ended" : socket.status}`}>
@@ -230,13 +268,20 @@ export default function ChatRoom({ session }: { session: Session }) {
           </span>
         </div>
         <button className="small side-toggle" onClick={() => setShowSide((v) => !v)} aria-expanded={showSide}>
-          {showSide ? "กลับไปแชท" : isHost ? "QR / สมาชิก" : `สมาชิก (${members.filter((m) => m.online).length})`}
+          {showSide ? "กลับไปแชท" : isHost ? "เชิญ / สมาชิก" : `สมาชิก (${members.filter((m) => m.online).length})`}
         </button>
       </header>
 
       <div className={showSide ? "chat-body show-side" : "chat-body"}>
+        <nav className="chat-rooms" aria-label="ห้องของฉัน">
+          <h2>ห้องของฉัน</h2>
+          <RoomList activeRoomId={roomId} />
+        </nav>
         <main className="chat-main">
           <MessageList
+            roomId={roomId}
+            jwt={session.jwt}
+            onOpenImage={setViewing}
             messages={msgs.confirmed}
             pending={msgs.pending}
             selfId={session.member_id}
@@ -247,7 +292,11 @@ export default function ChatRoom({ session }: { session: Session }) {
             onRetry={retry}
           />
           {notice && <div className="toast">{notice}</div>}
-          {ended ? <div className="ended-bar">{ended}</div> : <Composer disabled={!ready} onSend={send} />}
+          {ended ? (
+            <div className="ended-bar">{ended}</div>
+          ) : (
+            <Composer disabled={!ready} onSend={send} onError={setNotice} />
+          )}
         </main>
 
         <aside className="chat-side">
@@ -261,6 +310,7 @@ export default function ChatRoom({ session }: { session: Session }) {
           />
         </aside>
       </div>
+      {viewing && <ImageViewer url={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

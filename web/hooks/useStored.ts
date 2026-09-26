@@ -2,9 +2,14 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 
+// "storage" fires for other tabs; "smalltalk-storage" for writes in this tab (see lib/session).
 const subscribe = (onChange: () => void) => {
   window.addEventListener("storage", onChange);
-  return () => window.removeEventListener("storage", onChange);
+  window.addEventListener("smalltalk-storage", onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener("smalltalk-storage", onChange);
+  };
 };
 
 /**

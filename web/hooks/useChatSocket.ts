@@ -131,8 +131,8 @@ export function useChatSocket({ roomId, jwt, getLastMessageId, onFrame, onOpen }
     };
   }, [roomId, jwt]);
 
-  const send = useCallback((clientMsgId: string, body: string) => {
-    const frame: ClientFrame = { type: "send", client_msg_id: clientMsgId, body };
+  const send = useCallback((clientMsgId: string, body: string, imageId?: string) => {
+    const frame: ClientFrame = { type: "send", client_msg_id: clientMsgId, body, image_id: imageId };
     outbox.current.set(clientMsgId, frame);
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));

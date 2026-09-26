@@ -31,10 +31,11 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   const fetchInvites = useCallback(async () => {
     const res = await api<{ invites: InviteView[] }>(`/rooms/${roomId}/invites`, { jwt: session.jwt });
-    // The QR can only be redrawn from the token we saved at creation time.
+    // The link can only be shown again from the token we saved at creation time.
     const saved = loadInvite(roomId);
     const stillUsable = saved !== null && res.invites.some((i) => i.id === saved.id);
     if (!stillUsable && saved) saveInvite(roomId, null);
@@ -101,22 +102,48 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
     return (
       <section className="panel">
         <h2>ห้องปิดแล้ว</h2>
-        <p className="muted">ไม่สามารถออก QR หรือส่งข้อความได้อีก ประวัติแชทยังเปิดอ่านได้</p>
+        <p className="muted">ไม่สามารถเชิญคนเพิ่มหรือส่งข้อความได้อีก ประวัติแชทยังเปิดอ่านได้</p>
       </section>
     );
   }
 
   const url = current ? inviteLink(current) : "";
 
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const share = async () => {
+    try {
+      await navigator.share({ title: "เข้าห้องแชท smalltalk", url });
+    } catch {
+      // cancelled by the user
+    }
+  };
+
   return (
     <section className="panel">
-      <h2>QR เชิญเข้าห้อง</h2>
+      <h2>ชวนเพื่อนเข้าห้อง</h2>
       {current ? (
-        <div className="qr">
-          <QRCodeSVG value={url} size={200} marginSize={2} bgColor="#ffffff" fgColor="#000000" />
-          <button className="link url" onClick={() => copy(url)} title="คัดลอกลิงก์">
-            {copied ? "คัดลอกแล้ว ✓" : url}
-          </button>
+        <div className="invite">
+          <div className="invite-link">
+            <input value={url} readOnly aria-label="ลิงก์เชิญ" onFocus={(e) => e.target.select()} />
+            <button className="primary" onClick={() => copy(url)}>
+              {copied ? "คัดลอกแล้ว ✓" : "คัดลอก"}
+            </button>
+          </div>
+          <div className="invite-actions">
+            {canShare && (
+              <button className="small" onClick={share}>
+                แชร์…
+              </button>
+            )}
+            <button className="small" onClick={() => setShowQR((v) => !v)} aria-expanded={showQR}>
+              {showQR ? "ซ่อน QR" : "แสดง QR"}
+            </button>
+          </div>
+          {showQR && (
+            <div className="qr">
+              <QRCodeSVG value={url} size={200} marginSize={2} bgColor="#ffffff" fgColor="#000000" />
+            </div>
+          )}
           <p className="muted small-text">
             หมดอายุ {dateFmt.format(new Date(current.expires_at))}
             {current.max_uses != null &&
@@ -124,12 +151,12 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
           </p>
         </div>
       ) : (
-        <p className="muted">ยังไม่มี QR ที่ใช้งานได้ กดออก QR ใหม่เพื่อเชิญคนเข้าห้อง</p>
+        <p className="muted">ยังไม่มีลิงก์เชิญที่ใช้งานได้ กดสร้างลิงก์ใหม่เพื่อชวนคนเข้าห้อง</p>
       )}
 
       <div className="invite-form">
         <label>
-          อายุ QR
+          อายุลิงก์
           <select value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
             {TTL_OPTIONS.map((o) => (
               <option key={o.minutes} value={o.minutes}>
@@ -152,7 +179,7 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
         </label>
       </div>
       <button className="primary wide" onClick={issueNew} disabled={busy}>
-        {active.length > 0 ? "ยกเลิก QR เดิมและออก QR ใหม่" : "ออก QR ใหม่"}
+        {active.length > 0 ? "ยกเลิกลิงก์เดิมและสร้างลิงก์ใหม่" : "สร้างลิงก์เชิญ"}
       </button>
 
       {active.length > (current ? 1 : 0) && (
@@ -162,7 +189,7 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
             .map((i) => (
               <li key={i.id}>
                 <span className="muted small-text">
-                  QR อื่นที่ยังใช้ได้ · หมดอายุ {dateFmt.format(new Date(i.expires_at))}
+                  ลิงก์อื่นที่ยังใช้ได้ · หมดอายุ {dateFmt.format(new Date(i.expires_at))}
                 </span>
                 <button className="small" onClick={() => revoke(i.id)}>
                   ยกเลิก
@@ -173,7 +200,7 @@ export default function HostPanel({ session, roomClosed, onClose }: Props) {
       )}
       {current && (
         <button className="link danger-text" onClick={() => revoke(current.id)}>
-          ยกเลิก QR นี้
+          ยกเลิกลิงก์นี้
         </button>
       )}
 

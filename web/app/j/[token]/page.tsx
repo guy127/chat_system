@@ -10,7 +10,7 @@ import { errorText } from "@/lib/errors";
 import { loadDisplayName, saveDisplayName, saveSession } from "@/lib/session";
 import type { Session } from "@/types/chat";
 
-// Errors that mean this QR will never work; hide the form and explain.
+// Errors that mean this invite will never work; hide the form and explain.
 const deadEnds = new Set(["invite_invalid", "invite_expired", "invite_exhausted", "room_closed", "room_full"]);
 
 export default function JoinPage({ params }: { params: Promise<{ token: string }> }) {

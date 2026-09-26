@@ -21,6 +21,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-0123456789}
       # Empty: invite links use the origin the host opened the app on.
       APP_BASE_URL: ${APP_BASE_URL:-}
+    volumes:
+      - media:/data
     depends_on:
       db:
         condition: service_healthy
@@ -45,3 +47,4 @@ services:
 
 volumes:
   pgdata:
+  media:

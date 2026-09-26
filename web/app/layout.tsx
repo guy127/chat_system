@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "smalltalk",
-  description: "ห้องแชทที่เข้าได้ด้วยการสแกน QR ไม่ต้องลงแอป ไม่ต้องสมัครสมาชิก",
+  description: "ห้องแชทที่เข้าได้ด้วยลิงก์หรือ QR ไม่ต้องลงแอป ไม่ต้องสมัครสมาชิก",
 };
 
 export const viewport: Viewport = {

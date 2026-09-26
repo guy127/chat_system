@@ -2,10 +2,14 @@
 
 import { useLayoutEffect, useRef } from "react";
 
+import ChatImage, { imageBoxStyle } from "@/components/ChatImage";
 import type { PendingMessage } from "@/lib/messages";
 import type { ChatMessage } from "@/types/chat";
 
 interface Props {
+  roomId: string;
+  jwt: string;
+  onOpenImage: (url: string) => void;
   messages: ChatMessage[];
   pending: PendingMessage[];
   selfId: string;
@@ -19,6 +23,9 @@ interface Props {
 const timeFmt = new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit" });
 
 export default function MessageList({
+  roomId,
+  jwt,
+  onOpenImage,
   messages,
   pending,
   selfId,
@@ -70,16 +77,27 @@ export default function MessageList({
         return (
           <div key={m.id} className={mine ? "msg mine" : "msg"}>
             {showName && <div className="msg-name">{labels.get(m.member_id) ?? m.display_name}</div>}
-            <div className="bubble">{m.body}</div>
+            {m.image && <ChatImage roomId={roomId} jwt={jwt} image={m.image} onOpen={onOpenImage} />}
+            {m.body.trim() !== "" && <div className="bubble">{m.body}</div>}
             <div className="msg-meta">{timeFmt.format(new Date(m.created_at))}</div>
           </div>
         );
       })}
       {pending.map((p) => (
         <div key={p.client_msg_id} className="msg mine">
-          <div className={p.status === "failed" ? "bubble failed" : "bubble sending"}>{p.body}</div>
+          {p.image && (
+            <div className="chat-image pending" style={imageBoxStyle(p.image.width, p.image.height)}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- local preview */}
+              <img src={p.image.previewURL} alt="รูปที่กำลังส่ง" />
+            </div>
+          )}
+          {p.body.trim() !== "" && (
+            <div className={p.status === "failed" ? "bubble failed" : "bubble sending"}>{p.body}</div>
+          )}
           <div className="msg-meta">
-            {p.status === "sending" ? (
+            {p.status === "uploading" ? (
+              `กำลังอัปโหลดรูป ${Math.round((p.image?.progress ?? 0) * 100)}%`
+            ) : p.status === "sending" ? (
               "กำลังส่ง…"
             ) : (
               <>
