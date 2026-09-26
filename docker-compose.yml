@@ -21,6 +21,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me-0123456789}
       # Empty: invite links use the origin the host opened the app on.
       APP_BASE_URL: ${APP_BASE_URL:-}
+      # Trusted backends (e.g. the claims system) call /service/v1 with this key
+      # (at least 32 characters). Empty turns the service API off.
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-}
+      SERVICE_JWT_TTL: ${SERVICE_JWT_TTL:-15m}
+      # Other web apps that call the API from the browser, e.g. https://claims.example.com.
+      # CORS_ORIGINS is for REST, ALLOWED_ORIGINS for the WebSocket handshake.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     volumes:
       - media:/data
     depends_on:

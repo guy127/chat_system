@@ -229,6 +229,32 @@ WebSocket: `/ws?room={id}` ส่ง JWT เป็น subprotocol ตัวท�
 4. รูปหนึ่งส่งได้ครั้งเดียว และส่งได้เฉพาะคนที่อัปโหลด รูปที่อัปโหลดแล้วไม่ถูกส่งภายใน 1 ชั่วโมงจะถูกลบ
 5. ตอนดาวน์โหลดตอบพร้อม `nosniff` และ `Content-Security-Policy: sandbox` คนที่ถูกเตะ/แบนหรืออยู่ห้องอื่นเปิดรูปไม่ได้
 
+## Service API สำหรับระบบภายนอก
+
+ระบบอื่น (เช่นระบบเบิกค่ารักษาพยาบาล) ใช้ smalltalk เป็น chat service ได้ผ่าน `/service/v1`
+ระบบนั้นตรวจสิทธิ์ผู้ใช้เอง แล้วขอห้องและ session แทนผู้ใช้ — browser ของผู้ใช้ต่อ REST/WebSocket ของ smalltalk ตรงด้วย JWT ที่ได้มา
+
+- ห้องผูกกับ `ref` ของระบบภายนอก เช่น `claims:ticket:123:public`; เรียก `PUT` ซ้ำได้ห้องเดิม
+- สมาชิกผูกกับ `external_user_id`; ขอ session ซ้ำได้ `member_id` เดิม และมี `label` บอกบทบาท
+- ห้องแบบนี้ไม่มีลิงก์เชิญและไม่มี owner
+- เรียกได้จากเครือข่ายภายในเท่านั้น — Nginx ตอบ 404 ให้ `/api/service/`
+
+| Method | Path | หมายเหตุ |
+| --- | --- | --- |
+| PUT | `/service/v1/rooms/{ref}` | `{name}` → `room_id, status` สร้างห้องถ้ายังไม่มี |
+| POST | `/service/v1/rooms/{ref}/sessions` | `{external_user_id, display_name, label?}` → session (JWT อายุ `SERVICE_JWT_TTL`) |
+| POST | `/service/v1/rooms/{ref}/close` | ปิดห้อง เรียกซ้ำได้ |
+| GET | `/service/v1/rooms/{ref}/images/{imageId}` | ไฟล์รูปที่ถูกส่งในห้องนั้นแล้ว + header `X-Sender-External-Id` |
+
+| ตัวแปร | ค่าเริ่มต้น | ความหมาย |
+| --- | --- | --- |
+| `SERVICE_API_KEY` | ว่าง (ปิด) | key ที่ระบบภายนอกส่งใน `Authorization: Bearer`, ยาว ≥ 32 ตัวอักษร |
+| `SERVICE_JWT_TTL` | `15m` | อายุ JWT ที่ออกผ่าน service API |
+| `CORS_ORIGINS` | ว่าง | origin ของเว็บอื่นที่เรียก REST ได้ เช่น `https://claims.example.com` |
+| `ALLOWED_ORIGINS` | ว่าง | origin/host ที่เปิด WebSocket ได้ นอกจาก host ของตัวเอง |
+
+รายละเอียด endpoint อยู่ใน [docs/openapi.yaml](docs/openapi.yaml) (tag `service`)
+
 ## สิ่งที่ต่างจากแผนเล็กน้อย
 
 - `room_members` มีคอลัมน์ `kicked_at` เพิ่ม เพื่อแยก "เตะ" (เข้าใหม่ด้วยลิงก์เชิญได้) กับ "แบน"
