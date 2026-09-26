@@ -145,6 +145,13 @@ func (h *Handler) serveWS(c *gin.Context) {
 	h.hub.Register(ctx, client)
 	defer h.hub.Unregister(context.WithoutCancel(ctx), client)
 
+	// The JWT only gates the handshake, so end the connection when it expires;
+	// the client gets 4001 and must fetch a fresh session to reconnect.
+	expiry := time.AfterFunc(time.Until(claims.ExpiresAt), func() {
+		client.push(outbound{data: errorFrame(apperr.Unauthorized, ""), closeCode: CloseUnauthorized, closeReason: "token expired"})
+	})
+	defer expiry.Stop()
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {

@@ -13,6 +13,8 @@ type Claims struct {
 	RoomID   uuid.UUID
 	MemberID uuid.UUID
 	Role     string
+	// ExpiresAt is filled in by Parse; Issue ignores it and uses the TTL.
+	ExpiresAt time.Time
 }
 
 // Session is what a client receives after joining or creating a room.
@@ -81,5 +83,5 @@ func (i *Issuer) Parse(token string) (Claims, error) {
 	if err != nil {
 		return Claims{}, fmt.Errorf("parse jwt subject: %w", err)
 	}
-	return Claims{RoomID: roomID, MemberID: memberID, Role: jc.Role}, nil
+	return Claims{RoomID: roomID, MemberID: memberID, Role: jc.Role, ExpiresAt: jc.ExpiresAt.Time}, nil
 }

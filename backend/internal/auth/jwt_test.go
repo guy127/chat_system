@@ -21,7 +21,8 @@ func TestIssueForUsesGivenTTL(t *testing.T) {
 	if !s.ExpiresAt.Equal(now.Add(15 * time.Minute)) {
 		t.Fatalf("service session expires %v", s.ExpiresAt)
 	}
-	if got, err := i.Parse(s.JWT); err != nil || got != c {
+	if got, err := i.Parse(s.JWT); err != nil || got.RoomID != c.RoomID || got.MemberID != c.MemberID ||
+		got.Role != c.Role || !got.ExpiresAt.Equal(s.ExpiresAt) {
 		t.Fatalf("parse = %+v, %v", got, err)
 	}
 	d, _ := i.Issue(c)

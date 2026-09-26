@@ -245,3 +245,17 @@ func TestServiceRoomsRejectInvites(t *testing.T) {
 		t.Fatalf("join service room = %q", code)
 	}
 }
+
+func TestServiceSocketClosesWhenJWTExpires(t *testing.T) {
+	a := newAPIWith(t, func(c *config.Config) { c.ServiceJWTTTL = 2 * time.Second })
+	ref := testRef()
+	a.ensureServiceRoom(ref)
+	s, _ := a.serviceSession(ref, "user:1", "A", "")
+	c := a.dial(s)
+	if e := c.next("error"); e["code"] != "unauthorized" {
+		t.Fatalf("expiry frame = %v", e)
+	}
+	if st := c.closeStatus(); st != chat.CloseUnauthorized {
+		t.Fatalf("close status %d, want 4001", st)
+	}
+}
