@@ -1,0 +1,1149 @@
+openapi: 3.1.0
+info:
+  title: smalltalk API
+  version: 0.2.0
+  summary: Room chat joined by invite link or QR. No app install, no sign-up.
+  description: |
+    REST API and WebSocket contract of the smalltalk server (`server/`).
+
+    **Conventions**
+    - JSON fields are `snake_case`; times are RFC 3339 in UTC, e.g. `2026-09-26T06:00:00Z`.
+    - Every error uses the same envelope: `{"error": {"code": "invite_expired", "message": "..."}}`.
+      Clients should branch on `code`, never on `message`.
+    - Authentication is a short-lived JWT (12 h) bound to **one room and one member**. It is returned
+      by `POST /rooms`, `POST /join` and `POST /rooms/{id}/owner-session` and sent as
+      `Authorization: Bearer <jwt>`. A JWT for room A is rejected on every route of room B.
+    - Membership is re-checked on every request: kicked or banned members get `403` even with a
+      JWT that has not expired yet.
+
+    **Realtime** traffic goes over the WebSocket at `GET /ws`; see that operation and the
+    `ClientFrame` / `ServerFrame` schemas.
+
+    **Rate limits**: `POST /join` 10/min per IP; sending 5 messages/s per member;
+    image uploads 10/min per member (bursts of 5). Exceeding one returns `429 rate_limited`.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+
+servers:
+  - url: http://localhost:8000/api
+    description: Docker Compose (through Nginx, which strips the /api prefix)
+  - url: http://localhost:8080
+    description: Go server directly (`go run ./cmd/server`)
+
+tags:
+  - name: rooms
+    description: Creating rooms, host sessions and room details
+  - name: invites
+    description: Invite links (also shown as QR) and joining a room
+  - name: members
+    description: Member list, presence and moderation
+  - name: messages
+    description: Message history and room summaries
+  - name: images
+    description: Image upload and download
+  - name: realtime
+    description: WebSocket connection
+  - name: ops
+    description: Operational endpoints
+
+security:
+  - roomJWT: []
+
+paths:
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: healthz
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: ok
+
+  /rooms:
+    post:
+      tags: [rooms]
+      operationId: createRoom
+      summary: Create a room
+      description: |
+        Creates a room and its host (role `owner`). Returns the host's JWT plus an `owner_token`
+        that is shown only once; store it to get a new JWT later with
+        `POST /rooms/{id}/owner-session`. No invite is created; call `POST /rooms/{id}/invites`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomRequest"
+            example:
+              name: ทีมงานอีเวนต์
+              display_name: กาย
+      responses:
+        "201":
+          description: Room created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedRoom"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+
+  /rooms/{id}/owner-session:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    post:
+      tags: [rooms]
+      operationId: createOwnerSession
+      summary: Get a new host JWT with the owner token
+      description: Lets the host come back after their JWT expired, from any device holding the owner token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [owner_token]
+              properties:
+                owner_token:
+                  type: string
+      responses:
+        "200":
+          description: A fresh session for the room's owner member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{id}:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [rooms]
+      operationId: getRoom
+      summary: Get room details
+      responses:
+        "200":
+          description: The room.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Removed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{id}/close:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    post:
+      tags: [rooms]
+      operationId: closeRoom
+      summary: Close the room (host only)
+      description: |
+        Sets the room to `closed`, sends `room_closed` to every open WebSocket and closes them with
+        code 4004. Members can still read history; nobody can join, send or upload any more.
+      responses:
+        "204":
+          description: Room closed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrRemoved"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{id}/invites:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    post:
+      tags: [invites]
+      operationId: createInvite
+      summary: Create an invite link (host only)
+      description: |
+        Issues a random 128-bit token. Only its SHA-256 hash is stored, so the token and link are
+        returned **once**. Share `invite_url` as a link or render it as a QR code. When the server
+        runs without `APP_BASE_URL`, `invite_url` is a path (`/j/{token}`) and the client prefixes
+        its own origin.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInviteRequest"
+            example:
+              expires_in_minutes: 1440
+              max_uses: 20
+      responses:
+        "201":
+          description: Invite created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedInvite"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrRemoved"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/RoomClosed"
+    get:
+      tags: [invites]
+      operationId: listInvites
+      summary: List usable invites (host only)
+      description: Invites that are not revoked, expired or used up, newest first. Tokens are never returned again.
+      responses:
+        "200":
+          description: Usable invites.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invites]
+                properties:
+                  invites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Invite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrRemoved"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{id}/invites/{inviteId}:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+      - name: inviteId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [invites]
+      operationId: revokeInvite
+      summary: Revoke an invite (host only)
+      description: The link stops working immediately. Members who already joined stay in the room. Revoking twice is a no-op.
+      responses:
+        "204":
+          description: Invite revoked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrRemoved"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /join:
+    post:
+      tags: [invites]
+      operationId: joinRoom
+      summary: Join a room with an invite token
+      description: |
+        Redeems an invite (atomically counted against `max_uses`) and creates a new member with the
+        given nickname. Duplicate nicknames are allowed; clients label them by join order
+        ("สมชาย", "สมชาย (2)"). Limited to 10 requests per minute per IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinRequest"
+            example:
+              token: 5_m8xks2Bn7OKMiuCMO4pQ
+              display_name: สมชาย
+      responses:
+        "200":
+          description: Joined; the session is bound to the invite's room.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinedRoom"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "404":
+          description: "`invite_invalid`: unknown or revoked token."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: { code: invite_invalid, message: invite is invalid or was revoked }
+        "409":
+          description: "`room_full`: the room already has 200 active members."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "410":
+          description: "`invite_expired`, `invite_exhausted` or `room_closed`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: { code: invite_expired, message: invite has expired }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /rooms/{id}/members:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [members]
+      operationId: listMembers
+      summary: List active members with presence
+      description: Kicked and banned members are excluded. `online` is true while the member has at least one open WebSocket.
+      responses:
+        "200":
+          description: Members, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Member"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Removed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{id}/members/{mid}/kick:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+      - name: mid
+        in: path
+        required: true
+        description: Member to remove.
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [members]
+      operationId: kickMember
+      summary: Kick or ban a member (host only)
+      description: |
+        Removes the member and closes their WebSockets immediately (frame `kicked`, close code 4003).
+        A kicked person may come back through a valid invite as a **new** member; a banned member
+        record can never be used again. Bans apply to the member, not the person, because there are
+        no accounts: revoke and reissue invites to keep someone out. The host cannot be removed.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ban:
+                  type: boolean
+                  default: false
+      responses:
+        "204":
+          description: Member removed.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrRemoved"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [messages]
+      operationId: listMessages
+      summary: Load message history
+      description: |
+        Returns one page, oldest first. Pass `next_cursor` as `before` to load the page before it;
+        `next_cursor` is `null` when there is nothing older. Message ids are ULIDs and sort by time.
+      parameters:
+        - name: before
+          in: query
+          required: false
+          description: Only messages older than this message id.
+          schema:
+            $ref: "#/components/schemas/MessageId"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: A page of messages.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePage"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Removed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/summaries:
+    post:
+      tags: [messages]
+      operationId: summarizeRooms
+      summary: Summaries for the room list
+      description: |
+        Takes every room session a browser holds and answers for each one independently, so one
+        expired or revoked session does not fail the whole list. Each entry is authorised by its own
+        room JWT in the body, so this route needs no Authorization header. At most 100 rooms.
+        `unread` counts messages from **other** members after `last_read_id`, capped at 99.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SummariesRequest"
+      responses:
+        "200":
+          description: One summary per requested room, in request order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rooms]
+                properties:
+                  rooms:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RoomSummary"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+
+  /rooms/{id}/images:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    post:
+      tags: [images]
+      operationId: uploadImage
+      summary: Upload an image
+      description: |
+        Accepts JPEG, PNG or GIF up to 10 MB and 8192 px per side. The type is detected from the
+        bytes, not the filename or declared type. EXIF/XMP/IPTC segments and PNG text chunks are
+        removed (this drops GPS location). The image is private until a message references it by
+        sending `image_id` over the WebSocket; unattached uploads are deleted after one hour.
+        The web client resizes to 2048 px and re-encodes before uploading (WebP/HEIC become JPEG).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  contentMediaType: application/octet-stream
+            encoding:
+              image:
+                contentType: image/jpeg, image/png, image/gif
+      responses:
+        "201":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedImage"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Removed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/RoomClosed"
+        "413":
+          description: "`image_too_large`: over 10 MB."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: "`image_unsupported`: not a JPEG/PNG/GIF, unreadable, or larger than 8192 px per side."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /rooms/{id}/images/{imageId}:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [images]
+      operationId: getImage
+      summary: Download an image
+      description: |
+        Requires the Authorization header, so `<img src>` cannot load it directly: fetch it and show
+        an object URL. Served with `X-Content-Type-Options: nosniff`,
+        `Content-Security-Policy: default-src 'none'; sandbox` and a private, immutable cache header.
+      responses:
+        "200":
+          description: The image bytes.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, max-age=86400, immutable
+          content:
+            image/jpeg:
+              schema: {}
+            image/png:
+              schema: {}
+            image/gif:
+              schema: {}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Removed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /ws:
+    get:
+      tags: [realtime]
+      operationId: openWebSocket
+      summary: Open the realtime WebSocket
+      description: |
+        Upgrade to WebSocket. Browsers cannot set headers on a WebSocket, so the JWT is sent as the
+        **second subprotocol**, which keeps it out of URLs and access logs:
+
+        ```js
+        new WebSocket(`wss://host/ws?room=${roomId}`, ["chat", jwt])
+        ```
+
+        The server selects subprotocol `chat`. `Origin` must match the host (or `ALLOWED_ORIGINS`),
+        otherwise the upgrade is refused with `403`. Authentication happens after the upgrade, so
+        auth failures arrive as an `error` frame followed by a close code.
+
+        **Flow**
+        1. After `open`, send `resume` with the newest message id you have; missed messages are
+           replayed as `message` frames, then live traffic continues. Without an id, reload the
+           latest page over REST instead.
+        2. Send `ping` every 25 s; a connection silent for 60 s is dropped.
+        3. `send` is stored before it is broadcast. The sender gets `ack`; everyone in the room,
+           the sender included, gets `message`. Re-sending the same `client_msg_id` (for example
+           after a reconnect) returns the stored message and never duplicates it.
+        4. To send an image, upload it first (`POST /rooms/{id}/images`) and put its id in
+           `image_id`; `body` is then an optional caption.
+
+        **Close codes**: `4001` unauthorized, `4003` kicked or banned, `4004` room closed; do not
+        reconnect after these. Any other close: reconnect with exponential backoff (1, 2, 4, 8 … 30 s)
+        and `resume`.
+
+        **Frames** are JSON text; see `ClientFrame` and `ServerFrame`. Frames are limited to 16 KB.
+      security: []
+      parameters:
+        - name: room
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: true
+          description: "`chat, <jwt>`"
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols; then exchange `ClientFrame` / `ServerFrame` messages.
+        "403":
+          description: Origin not allowed.
+        "426":
+          description: Not a WebSocket upgrade request.
+
+components:
+  securitySchemes:
+    roomJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Room-bound JWT from `POST /rooms`, `POST /join` or `POST /rooms/{id}/owner-session`. Valid for 12 hours.
+
+  parameters:
+    RoomId:
+      name: id
+      in: path
+      required: true
+      description: Room id. Must match the room of the JWT.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    InvalidInput:
+      description: "`invalid_input` (or `message_too_long`): the request is malformed; `message` explains why."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: invalid_input, message: display_name is required }
+    Unauthorized:
+      description: "`unauthorized`: missing, expired or invalid JWT, or a JWT for another room."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: unauthorized, message: missing or invalid credentials }
+    Removed:
+      description: "`kicked` or `banned`: the member was removed from the room."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: banned, message: you are banned from this room }
+    ForbiddenOrRemoved:
+      description: "`forbidden` (not the host), `kicked` or `banned`."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: forbidden, message: not allowed }
+    NotFound:
+      description: "`not_found`: the room, member, invite or image does not exist."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: not_found, message: not found }
+    RoomClosed:
+      description: "`room_closed`."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: room_closed, message: room is closed }
+    RateLimited:
+      description: "`rate_limited`."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: { code: rate_limited, message: too many requests }
+
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+        - not_found
+        - unauthorized
+        - forbidden
+        - invalid_input
+        - invite_invalid
+        - invite_expired
+        - invite_exhausted
+        - room_closed
+        - room_full
+        - rate_limited
+        - banned
+        - kicked
+        - message_too_long
+        - image_too_large
+        - image_unsupported
+        - internal
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            message:
+              type: string
+              description: Human-readable English detail; not for display logic.
+
+    MessageId:
+      type: string
+      description: ULID; lexical order is time order.
+      pattern: "^[0-9A-HJKMNP-TV-Z]{26}$"
+      examples: [01J8Z3Q4R5S6T7V8W9XYZABCDE]
+
+    DisplayName:
+      type: string
+      minLength: 1
+      maxLength: 32
+      description: Trimmed; inner whitespace collapsed. Counted in characters, so Thai text is fine.
+
+    Role:
+      type: string
+      enum: [owner, member]
+
+    CreateRoomRequest:
+      type: object
+      required: [name, display_name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+
+    Session:
+      type: object
+      required: [room_id, member_id, role, jwt, expires_at]
+      properties:
+        room_id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          format: uuid
+        role:
+          $ref: "#/components/schemas/Role"
+        jwt:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    CreatedRoom:
+      allOf:
+        - $ref: "#/components/schemas/Session"
+        - type: object
+          required: [owner_token]
+          properties:
+            owner_token:
+              type: string
+              description: Returned only here. Keep it secret; it recovers host access.
+
+    JoinRequest:
+      type: object
+      required: [token, display_name]
+      properties:
+        token:
+          type: string
+          description: The `{token}` part of the invite link `/j/{token}`.
+        display_name:
+          $ref: "#/components/schemas/DisplayName"
+
+    JoinedRoom:
+      allOf:
+        - $ref: "#/components/schemas/Session"
+        - type: object
+          required: [room_name]
+          properties:
+            room_name:
+              type: string
+
+    Room:
+      type: object
+      required: [id, name, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, closed]
+        created_at:
+          type: string
+          format: date-time
+
+    CreateInviteRequest:
+      type: object
+      properties:
+        expires_in_minutes:
+          type: integer
+          minimum: 1
+          maximum: 43200
+          default: 1440
+          description: 0 or omitted means the default of 24 hours.
+        max_uses:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 200
+          description: null or omitted means unlimited.
+
+    CreatedInvite:
+      type: object
+      required: [id, token, invite_url, expires_at, max_uses]
+      properties:
+        id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: Random 128-bit, base64url. Returned only here.
+        invite_url:
+          type: string
+          description: Absolute when the server has `APP_BASE_URL`, otherwise the path `/j/{token}`.
+          examples: [/j/5_m8xks2Bn7OKMiuCMO4pQ]
+        expires_at:
+          type: string
+          format: date-time
+        max_uses:
+          type: [integer, "null"]
+
+    Invite:
+      type: object
+      required: [id, expires_at, max_uses, used_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        max_uses:
+          type: [integer, "null"]
+        used_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Member:
+      type: object
+      required: [id, display_name, role, joined_at, online]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        joined_at:
+          type: string
+          format: date-time
+        online:
+          type: boolean
+
+    ImageRef:
+      type: object
+      required: [id, content_type, width, height]
+      properties:
+        id:
+          type: string
+          format: uuid
+        content_type:
+          type: string
+          enum: [image/jpeg, image/png, image/gif]
+        width:
+          type: integer
+        height:
+          type: integer
+
+    UploadedImage:
+      allOf:
+        - $ref: "#/components/schemas/ImageRef"
+        - type: object
+          required: [size_bytes]
+          properties:
+            size_bytes:
+              type: integer
+              maximum: 10485760
+
+    Message:
+      type: object
+      required: [id, member_id, display_name, client_msg_id, body, image, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/MessageId"
+        member_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          description: Name at send time; clients may relabel duplicates using the member list.
+        client_msg_id:
+          type: string
+          format: uuid
+        body:
+          type: string
+          maxLength: 2000
+          description: May be empty when `image` is set. Plain text; render escaped, never as HTML.
+        image:
+          oneOf:
+            - $ref: "#/components/schemas/ImageRef"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+
+    MessagePage:
+      type: object
+      required: [messages, next_cursor]
+      properties:
+        messages:
+          type: array
+          description: Oldest first.
+          items:
+            $ref: "#/components/schemas/Message"
+        next_cursor:
+          oneOf:
+            - $ref: "#/components/schemas/MessageId"
+            - type: "null"
+
+    SummariesRequest:
+      type: object
+      required: [rooms]
+      properties:
+        rooms:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [room_id, jwt]
+            properties:
+              room_id:
+                type: string
+                format: uuid
+              jwt:
+                type: string
+              last_read_id:
+                description: Newest message this client has seen; empty counts everything as unread.
+                oneOf:
+                  - $ref: "#/components/schemas/MessageId"
+                  - type: string
+                    maxLength: 0
+
+    RoomSummary:
+      type: object
+      required: [room_id, state, last_message, unread]
+      properties:
+        room_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [active, kicked, banned, unauthorized, not_found]
+          description: Anything but `active` means this session can no longer use the room.
+        name:
+          type: string
+          description: Present when `state` is `active`.
+        status:
+          type: string
+          enum: [active, closed]
+          description: Present when `state` is `active`.
+        last_message:
+          oneOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+        unread:
+          type: integer
+          minimum: 0
+          maximum: 99
+
+    # ---- WebSocket frames ----
+
+    ClientFrame:
+      description: Frames the client sends over `/ws`.
+      oneOf:
+        - $ref: "#/components/schemas/SendFrame"
+        - $ref: "#/components/schemas/ResumeFrame"
+        - $ref: "#/components/schemas/PingFrame"
+      discriminator:
+        propertyName: type
+        mapping:
+          send: "#/components/schemas/SendFrame"
+          resume: "#/components/schemas/ResumeFrame"
+          ping: "#/components/schemas/PingFrame"
+
+    SendFrame:
+      type: object
+      required: [type, client_msg_id, body]
+      properties:
+        type:
+          const: send
+        client_msg_id:
+          type: string
+          format: uuid
+          description: Generated by the client; reuse it when retrying so the message is stored once.
+        body:
+          type: string
+          maxLength: 2000
+          description: Required unless `image_id` is set.
+        image_id:
+          type: string
+          format: uuid
+          description: An image this member uploaded to this room and has not sent yet.
+
+    ResumeFrame:
+      type: object
+      required: [type, last_message_id]
+      properties:
+        type:
+          const: resume
+        last_message_id:
+          $ref: "#/components/schemas/MessageId"
+
+    PingFrame:
+      type: object
+      required: [type]
+      properties:
+        type:
+          const: ping
+
+    ServerFrame:
+      description: Frames the server sends over `/ws`.
+      oneOf:
+        - $ref: "#/components/schemas/MessageFrame"
+        - $ref: "#/components/schemas/AckFrame"
+        - $ref: "#/components/schemas/PresenceFrame"
+        - $ref: "#/components/schemas/ErrorFrame"
+        - $ref: "#/components/schemas/KickedFrame"
+        - $ref: "#/components/schemas/RoomClosedFrame"
+        - $ref: "#/components/schemas/PongFrame"
+      discriminator:
+        propertyName: type
+        mapping:
+          message: "#/components/schemas/MessageFrame"
+          ack: "#/components/schemas/AckFrame"
+          presence: "#/components/schemas/PresenceFrame"
+          error: "#/components/schemas/ErrorFrame"
+          kicked: "#/components/schemas/KickedFrame"
+          room_closed: "#/components/schemas/RoomClosedFrame"
+          pong: "#/components/schemas/PongFrame"
+
+    MessageFrame:
+      description: A stored message, live or replayed after `resume`. De-duplicate by `id`.
+      allOf:
+        - type: object
+          required: [type]
+          properties:
+            type:
+              const: message
+        - $ref: "#/components/schemas/Message"
+
+    AckFrame:
+      type: object
+      required: [type, client_msg_id, id, created_at]
+      properties:
+        type:
+          const: ack
+        client_msg_id:
+          type: string
+          format: uuid
+        id:
+          $ref: "#/components/schemas/MessageId"
+        created_at:
+          type: string
+          format: date-time
+
+    PresenceFrame:
+      description: Sent when a member's first connection opens or last connection closes (tabs are counted per member).
+      type: object
+      required: [type, member_id, display_name, online]
+      properties:
+        type:
+          const: presence
+        member_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        online:
+          type: boolean
+
+    ErrorFrame:
+      description: |
+        `client_msg_id` is set when the error belongs to a `send`. After `kicked`, `banned`,
+        `room_closed` or `unauthorized` the server closes the connection (4003 / 4004 / 4001).
+      type: object
+      required: [type, code, message]
+      properties:
+        type:
+          const: error
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        client_msg_id:
+          type: string
+
+    KickedFrame:
+      description: Sent to the removed member just before close code 4003.
+      type: object
+      required: [type, reason]
+      properties:
+        type:
+          const: kicked
+        reason:
+          type: string
+          enum: [kicked, banned]
+
+    RoomClosedFrame:
+      description: Sent to everyone just before close code 4004.
+      type: object
+      required: [type, reason]
+      properties:
+        type:
+          const: room_closed
+        reason:
+          type: string
+          const: room_closed
+
+    PongFrame:
+      type: object
+      required: [type]
+      properties:
+        type:
+          const: pong

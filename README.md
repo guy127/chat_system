@@ -70,6 +70,10 @@ CI (`.gitlab-ci.yml`) รัน lint + test (มี Postgres service) + build �
 
 ## API
 
+สเปกฉบับเต็ม (OpenAPI 3.1) อยู่ที่ [docs/openapi.yaml](docs/openapi.yaml) ครอบคลุมทั้ง REST, error code และ WebSocket frame
+เปิดดูแบบเอกสารได้ด้วย `npx @redocly/cli preview-docs docs/openapi.yaml`
+ถ้าเพิ่ม ลบ หรือเปลี่ยน route โดยไม่แก้สเปก test `TestOpenAPIMatchesRouter` จะไม่ผ่าน
+
 REST (ผ่าน Nginx อยู่ใต้ `/api`) — JSON snake_case, เวลาเป็น RFC 3339 UTC, error รูปแบบ `{"error": {"code", "message"}}`
 
 | Method | Path | ใคร | หมายเหตุ |

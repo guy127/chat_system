@@ -37,6 +37,12 @@ go:build:
     - cd server
     - CGO_ENABLED=0 go build -o bin/server ./cmd/server
 
+openapi:lint:
+  stage: lint
+  image: node:24-alpine
+  script:
+    - npx --yes @redocly/cli@latest lint docs/openapi.yaml
+
 web:lint:
   stage: lint
   image: node:24-alpine

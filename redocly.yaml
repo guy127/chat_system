@@ -1,0 +1,11 @@
+extends:
+  - recommended
+
+rules:
+  # Servers are the local Docker/dev addresses on purpose; there is no public host yet.
+  no-server-example.com: off
+  # /healthz cannot fail with a 4xx, and /ws answers 101 Switching Protocols.
+  operation-4xx-response: off
+  operation-2xx-response: off
+  # ClientFrame/ServerFrame document the WebSocket protocol; OpenAPI has no place to reference them from.
+  no-unused-components: off
